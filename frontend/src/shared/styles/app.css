@@ -28,6 +28,36 @@
   gap: 16px;
 }
 
+.auth-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid var(--sys-border);
+  border-radius: 8px;
+  background: var(--sys-bg);
+}
+
+.auth-switch__button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--sys-text-muted);
+  background: transparent;
+  font-weight: 650;
+}
+
+.auth-switch__button--active {
+  color: var(--sys-text);
+  background: var(--sys-surface);
+  box-shadow: var(--sys-shadow);
+}
+
+.form-error {
+  color: var(--sys-danger);
+  font-size: 13px;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -179,6 +209,10 @@
 .page-header p {
   margin-top: 4px;
   color: var(--sys-text-muted);
+}
+
+.page-header code {
+  color: var(--sys-text);
 }
 
 .button {
@@ -356,6 +390,60 @@
   gap: 8px;
 }
 
+.products-layout {
+  display: grid;
+  gap: 12px;
+}
+
+.products-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.products-form .button {
+  grid-column: span 2;
+  justify-self: start;
+}
+
+.empty-state {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  min-height: 180px;
+  color: var(--sys-text-muted);
+}
+
+.empty-state--error {
+  text-align: center;
+}
+
+.products-table {
+  display: grid;
+}
+
+.products-table__row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 0.6fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sys-border);
+  align-items: center;
+}
+
+.products-table__row--header {
+  padding-top: 0;
+  color: var(--sys-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.products-table__row:last-child {
+  border-bottom: 0;
+}
+
 @media (max-width: 1050px) {
   .dashboard-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -404,6 +492,15 @@
   }
 
   .alerts-panel {
+    grid-column: auto;
+  }
+
+  .products-form,
+  .products-table__row {
+    grid-template-columns: 1fr;
+  }
+
+  .products-form .button {
     grid-column: auto;
   }
 }

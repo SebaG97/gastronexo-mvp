@@ -1,63 +1,71 @@
 # Epic 00 - Foundation SaaS
 
-## Misión 2 - Backend, migraciones y despliegue
+## Misión 2 revisada - Desarrollo local
 
-### Objetivo
+### Estado
 
-Dejar lista la base de despliegue del backend para DigitalOcean App Platform con PostgreSQL administrado, migraciones repetibles y un health check apto para producción.
+Implementación local completada para levantar backend, frontend y PostgreSQL sin usar recursos externos.
 
-### Configuración local
+### Decisiones
 
-1. Entrar a `backend/`.
-2. Copiar `backend/.env.example` a `.env`.
-3. Completar `DATABASE_URL` con tu base local.
-4. Ejecutar:
+- PostgreSQL corre en Docker Compose con volumen persistente.
+- El JWT se guarda explícitamente en `sessionStorage` para desarrollo.
+- El frontend consume la API mediante `VITE_API_URL`.
+- `GET /health` es liveness.
+- `GET /ready` verifica conectividad real a PostgreSQL.
+- `/api/auth/register`, `/api/auth/login`, `/api/auth/me` y `/api/products` quedan disponibles para el flujo local.
+
+### Arranque local
+
+1. Copiar `backend/.env.example` a `backend/.env`.
+2. Copiar `frontend/.env.example` a `frontend/.env`.
+3. Levantar PostgreSQL:
 
 ```bash
+docker compose up -d postgres
+```
+
+4. Instalar y correr backend:
+
+```bash
+cd backend
 npm install
-npm run migrate
+npm run dev
+```
+
+5. Instalar y correr frontend:
+
+```bash
+cd frontend
+npm install
 npm run dev
 ```
 
 ### Variables de entorno
 
-- `NODE_ENV`: `development` o `production`.
-- `HOST`: host de escucha, recomendado `0.0.0.0` en App Platform.
-- `PORT`: puerto HTTP, por defecto `8080`.
-- `LOG_LEVEL`: nivel de logs de Fastify.
-- `DATABASE_URL`: string de conexión a PostgreSQL.
-- `DATABASE_SSL`: `true` para PostgreSQL administrado, `false` para local.
-- `MIGRATIONS_DIR`: carpeta de migraciones SQL. En runtime compilado usa `dist/db/migrations`.
+Backend:
 
-### Despliegue en DigitalOcean
+- `DATABASE_URL=postgresql://gastronexo:gastronexo-dev@localhost:5432/gastronexo_dev`
+- `DATABASE_SSL=false`
+- `JWT_SECRET=dev-only-change-me`
+- `JWT_ISSUER=gastronexo-local`
+- `JWT_EXPIRES_IN_SECONDS=86400`
+- `CORS_ORIGIN=http://localhost:5173`
 
-La spec está en [`.do/app.yaml`](../../.do/app.yaml).
+Frontend:
 
-Puntos clave:
+- `VITE_API_URL=http://localhost:3001`
 
-- build reproducible con `npm ci && npm run build`;
-- arranque con `npm run start:prod`;
-- health check HTTP en `/health`;
-- migraciones ejecutadas al iniciar el servicio y protegidas con lock de PostgreSQL;
-- `MIGRATIONS_DIR` apunta al directorio compilado para que las migraciones SQL estén disponibles en producción.
+### Criterios de aceptación
 
-Antes de desplegar:
+- `docker compose up -d postgres` deja una base local persistente.
+- `GET /health` responde sin tocar la base.
+- `GET /ready` falla si PostgreSQL no responde.
+- Login y registro devuelven JWT y habilitan la app.
+- Productos lista y crea registros contra `/api/products`.
+- Los builds de backend y frontend terminan OK.
 
-1. Crear la App en App Platform desde este repo.
-2. Configurar la conexión al Managed PostgreSQL.
-3. Definir `DATABASE_URL` como variable secreta o mediante el binding de la base administrada.
-4. Confirmar que `DATABASE_SSL=true` si la conexión administrada lo requiere.
+### Notas
 
-### Verificación
-
-Después del deploy:
-
-- `GET /health` debe responder `200`.
-- `GET /ready` debe responder `200` si la base está accesible.
-- Revisar logs de startup para confirmar que las migraciones terminaron sin errores.
-
-### Rollback
-
-- Para rollback de aplicación, volver a una release anterior desde App Platform.
-- Si hubo cambios de esquema incompatibles, restaurar la base desde backup/snapshot de Managed PostgreSQL.
-- Las migraciones son idempotentes y registran checksum; si un archivo cambia luego de aplicarse, el arranque falla para evitar drift silencioso.
+- No se crearon secretos reales.
+- No se toca `.do/app.yaml`.

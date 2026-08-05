@@ -26,13 +26,8 @@ async function main(): Promise<void> {
     });
   };
 
-  process.once('SIGINT', () => {
-    handleSignal();
-  });
-
-  process.once('SIGTERM', () => {
-    handleSignal();
-  });
+  process.once('SIGINT', handleSignal);
+  process.once('SIGTERM', handleSignal);
 
   try {
     await runMigrations(pool);

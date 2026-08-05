@@ -61,11 +61,29 @@ function parseLogLevel(value: string | undefined): LogLevel {
   throw new Error(`Invalid LOG_LEVEL value: ${value}`);
 }
 
+function parsePositiveInteger(value: string | undefined, fallback: number, fieldName: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid ${fieldName} value: ${value}`);
+  }
+
+  return parsed;
+}
+
 const nodeEnv = parseNodeEnv(process.env.NODE_ENV);
 const databaseUrl = process.env.DATABASE_URL;
+const jwtSecret = process.env.JWT_SECRET;
 
 if (!databaseUrl) {
   throw new Error('DATABASE_URL is required');
+}
+
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET is required');
 }
 
 export const config = {
@@ -75,5 +93,9 @@ export const config = {
   logLevel: parseLogLevel(process.env.LOG_LEVEL),
   databaseUrl,
   databaseSsl: parseBoolean(process.env.DATABASE_SSL, nodeEnv === 'production'),
-  migrationsDir: process.env.MIGRATIONS_DIR ?? 'src/db/migrations'
+  migrationsDir: process.env.MIGRATIONS_DIR ?? 'src/db/migrations',
+  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  jwtSecret,
+  jwtIssuer: process.env.JWT_ISSUER ?? 'gastronexo-local',
+  jwtExpiresInSeconds: parsePositiveInteger(process.env.JWT_EXPIRES_IN_SECONDS, 86_400, 'JWT_EXPIRES_IN_SECONDS')
 } as const;
