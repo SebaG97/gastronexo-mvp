@@ -1,0 +1,37 @@
+name: gastronexo-api
+services:
+  - name: api
+    github:
+      repo: SebaG97/gastronexo-mvp
+      branch: main
+      deploy_on_push: true
+    source_dir: backend
+    environment_slug: node-js
+    build_command: npm ci && npm run build
+    run_command: npm run start:prod
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 3
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+        type: GENERAL
+      - key: PORT
+        value: "8080"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: LOG_LEVEL
+        value: info
+        scope: RUN_TIME
+        type: GENERAL
+      - key: MIGRATIONS_DIR
+        value: dist/db/migrations
+        scope: RUN_TIME
+        type: GENERAL

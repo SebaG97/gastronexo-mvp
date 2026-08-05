@@ -1,11 +1,19 @@
 # Gastronexo MVP
 
-Base frontend para una consola operativa de gestión gastronómica.
+Base monorepo para una consola operativa de gestión gastronómica.
 
 ## Inicio rápido
 
 ```bash
 cd frontend
+npm install
+npm run dev
+```
+
+## Backend
+
+```bash
+cd backend
 npm install
 npm run dev
 ```
