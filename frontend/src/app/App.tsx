@@ -8,6 +8,8 @@ import { StockView } from '../features/stock/StockView'
 import { WasteView } from '../features/waste/WasteView'
 import { LoginView } from './components/LoginView'
 import { SystemShell, type AppSection } from './components/SystemShell'
+import { type AuthSession, ApiError, getCurrentUser } from '../shared/lib/api'
+import { clearSession, loadSession, saveSession } from '../shared/lib/session'
 
 const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   dashboard: { title: 'Dashboard', action: 'Ver reporte' },
@@ -20,7 +22,8 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
 }
 
 export function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const [authReady, setAuthReady] = useState(false)
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
@@ -28,10 +31,42 @@ export function App() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  useEffect(() => {
+    const storedSession = loadSession()
+
+    if (!storedSession) {
+      setAuthReady(true)
+      return
+    }
+
+    void getCurrentUser(storedSession.token)
+      .then((user) => {
+        const nextSession = {
+          token: storedSession.token,
+          user,
+        }
+
+        setSession(nextSession)
+        saveSession(nextSession)
+      })
+      .catch((error) => {
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession()
+          setSession(null)
+          return
+        }
+
+        clearSession()
+        setSession(null)
+      })
+      .finally(() => {
+        setAuthReady(true)
+      })
+  }, [])
+
   const view = useMemo(() => {
-    const views: Record<AppSection, JSX.Element> = {
+    const views: Record<Exclude<AppSection, 'products'>, JSX.Element> = {
       dashboard: <DashboardView />,
-      products: <ProductsView />,
       purchases: <PurchasesView />,
       production: <ProductionView />,
       waste: <WasteView />,
@@ -39,19 +74,44 @@ export function App() {
       stock: <StockView />,
     }
 
+    if (activeSection === 'products') {
+      return <></>
+    }
+
     return views[activeSection]
   }, [activeSection])
 
-  if (!isAuthenticated) {
-    return <LoginView onLogin={() => setIsAuthenticated(true)} />
+  if (!authReady) {
+    return (
+      <main className="login-page">
+        <section className="login-card">
+          <p>Cargando sesión local...</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (!session) {
+    return (
+      <LoginView
+        onSuccess={(nextSession) => {
+          saveSession(nextSession)
+          setSession(nextSession)
+        }}
+      />
+    )
   }
 
   const metadata = sectionMetadata[activeSection]
+  const handleAuthExpired = () => {
+    clearSession()
+    setSession(null)
+  }
 
   return (
     <SystemShell
       activeSection={activeSection}
-      onLogout={() => setIsAuthenticated(false)}
+      onLogout={handleAuthExpired}
       onNavigate={setActiveSection}
       onPrimaryAction={() => window.alert(`${metadata.action}: flujo pendiente de implementación.`)}
       onThemeToggle={() => setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'))}
@@ -59,7 +119,11 @@ export function App() {
       theme={theme}
       title={metadata.title}
     >
-      {view}
+      {activeSection === 'products' ? (
+        <ProductsView onAuthExpired={handleAuthExpired} token={session.token} />
+      ) : (
+        view
+      )}
     </SystemShell>
   )
 }
