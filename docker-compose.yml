@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: gastronexo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gastronexo
+      POSTGRES_PASSWORD: gastronexo-dev
+      POSTGRES_DB: gastronexo_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - gastronexo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gastronexo -d gastronexo_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  gastronexo_postgres_data:
