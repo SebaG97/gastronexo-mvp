@@ -6,6 +6,7 @@ import { config } from './config.js'
 import { pool } from './db/pool.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
 import { organizationMembersRoutes } from './modules/organization/organization-members.routes.js'
+import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
 
 export function buildApp() {
@@ -60,6 +61,7 @@ export function buildApp() {
 
   app.register(authRoutes, { prefix: '/api/auth' })
   app.register(organizationMembersRoutes, { prefix: '/api/organization' })
+  app.register(productCategoriesRoutes, { prefix: '/api/product-categories' })
   app.register(productsRoutes, { prefix: '/api/products' })
 
   return app

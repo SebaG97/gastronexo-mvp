@@ -8,6 +8,7 @@
 - [x] Épica 1 · Misión 1.2 — Autorización por roles aplicada en API
 - [x] Épica 1 · Misión 1.3 — Organización activa y gestión básica de miembros
 - [x] Épica 2 · Misión 2.1 — CRUD operativo de productos
+- [x] Épica 2 · Misión 2.2 — Categorías y unidades de medida
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -325,4 +326,60 @@
 ### Fuera de alcance (se mantiene)
 
 - No se implementó borrado físico de productos.
-- No se agregaron categorías de productos (Misión 2.2).
+- No se agregaron categorías de productos en Misión 2.1 (resuelto en Misión 2.2).
+
+## Misión 2.2 · Registro de ejecución
+
+### Decisiones tomadas
+
+- Se agregó migración incremental `002_product_categories.sql` sin alterar migraciones aplicadas previamente.
+- Las categorías son por organización (`organization_id`) con nombre obligatorio y estado (`is_active`).
+- Se añadió unicidad case-insensitive de nombre por organización con índice único sobre `lower(name)`.
+- `products` incorpora `category_id` nullable para transición sin categoría.
+- Las unidades de producto se restringen por API a catálogo fijo global:
+  - `unit`, `kg`, `g`, `l`, `ml`, `box`, `portion`.
+- No se implementa borrado físico de categorías.
+
+### Endpoints y permisos
+
+- `GET /api/product-categories?status=active|inactive|all` (`owner|admin|operator|viewer`, default `active`).
+- `POST /api/product-categories` (`owner|admin|operator`).
+- `PATCH /api/product-categories/:id` (`owner|admin|operator`) para renombrar.
+- `PATCH /api/product-categories/:id/status` (`owner|admin|operator`) para activar/inactivar.
+- `viewer` mantiene acceso de solo lectura y recibe `403` al intentar escritura.
+
+### Reglas de negocio aplicadas
+
+- Al asignar `categoryId` en `POST/PATCH /api/products`:
+  - la categoría debe existir,
+  - pertenecer a la organización activa,
+  - estar activa.
+- Si la categoría no cumple reglas (incluye categoría de otra organización), la API responde `404` genérico.
+- Al inactivar categoría, si tiene productos activos asociados en la organización, la API responde `409` con mensaje de reasignar o inactivar primero esos productos.
+- Lectura de productos (`listado` y `detalle`) ahora incluye `categoryId` y `categoryName`.
+
+### Backend técnico
+
+- Migración:
+  - nueva tabla `product_categories`;
+  - FK nullable `products.category_id -> product_categories.id`;
+  - índices por `organization_id` y `category_id`.
+- Operaciones que verifican relaciones y modifican estado usan transacciones (`BEGIN/COMMIT/ROLLBACK`) para consistencia.
+- Se mantienen respuestas seguras y consistentes para `400`, `401`, `403`, `404`, `409`.
+
+### Frontend (módulo Productos)
+
+- Formulario de producto actualizado:
+  - selector obligatorio de unidad desde catálogo local tipado;
+  - selector opcional de categoría activa con opción explícita `Sin categoría`;
+  - no se envía `categoryId` vacío como string.
+- Tabla de productos:
+  - nueva columna `Categoría`;
+  - muestra `Sin categoría` cuando corresponda;
+  - muestra etiqueta de unidad (ej. `Kilogramo`) en lugar de clave interna.
+- Gestión compacta de categorías dentro de Productos:
+  - listado por estado;
+  - crear, renombrar, activar/inactivar según permisos;
+  - viewer en solo lectura;
+  - feedback de carga, error y éxito.
+- Tras cambios en categorías se refrescan listado de productos y categorías activas del formulario.

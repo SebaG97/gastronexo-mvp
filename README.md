@@ -300,6 +300,92 @@ Con token de un rol con escritura (`owner|admin|operator`):
 	- Para `viewer`, acción primaria visible pero deshabilitada con motivo de permisos.
 	- Tabla permite editar y activar/inactivar solo para roles con escritura.
 
+### Probar Misión 2.2 (categorías y unidades)
+
+Con token de un rol con escritura (`owner|admin|operator`):
+
+1. Crear categoría:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/product-categories \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Secos"}'
+	```
+
+2. Listar categorías activas:
+
+	```bash
+	curl -i "http://localhost:3000/api/product-categories?status=active" \
+	  -H "Authorization: Bearer $TOKEN_A"
+	```
+
+3. Crear producto con categoría y unidad válida:
+
+	```bash
+	CATEGORY_ID=$(curl -s "http://localhost:3000/api/product-categories?status=active" \
+	  -H "Authorization: Bearer $TOKEN_A" | jq -r '.categories[0].id')
+
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"name\":\"Queso rallado\",\"unit\":\"kg\",\"cost\":25000,\"categoryId\":\"$CATEGORY_ID\"}"
+	```
+
+4. Verificar rechazo de unidad inválida (`400`):
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Unidad inválida","unit":"lb","cost":1000}'
+	```
+
+5. Verificar rechazo de categoría de otra organización (`404` genérico):
+
+	```bash
+	OTHER_CATEGORY_ID=$(curl -s "http://localhost:3000/api/product-categories?status=active" \
+	  -H "Authorization: Bearer $TOKEN_B" | jq -r '.categories[0].id')
+
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"name\":\"Cruce inválido\",\"unit\":\"unit\",\"cost\":1000,\"categoryId\":\"$OTHER_CATEGORY_ID\"}"
+	```
+
+6. Intentar inactivar categoría con productos activos (`409`):
+
+	```bash
+	curl -i -X PATCH "http://localhost:3000/api/product-categories/$CATEGORY_ID/status" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"isActive":false}'
+	```
+
+7. Inactivar categoría sin productos activos (éxito):
+
+	```bash
+	# Reasignar o inactivar primero productos activos de la categoría
+	curl -i -X PATCH "http://localhost:3000/api/product-categories/$CATEGORY_ID/status" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"isActive":false}'
+	```
+
+8. Verificar permisos de `viewer`:
+
+	```bash
+	curl -i "http://localhost:3000/api/product-categories?status=all" \
+	  -H "Authorization: Bearer $TOKEN_B_A"
+
+	curl -i -X POST http://localhost:3000/api/product-categories \
+	  -H "Authorization: Bearer $TOKEN_B_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"No permitido"}'
+	```
+
+Unidades permitidas por API: `unit`, `kg`, `g`, `l`, `ml`, `box`, `portion`.
+
 Para simular base no disponible sin apagar la API:
 
 ```bash

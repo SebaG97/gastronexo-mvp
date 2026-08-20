@@ -80,10 +80,27 @@ export type Product = {
   id: string
   name: string
   sku: string | null
-  unit: string
+  unit: ProductUnit
   cost: number
+  categoryId: string | null
+  categoryName: string | null
   isActive: boolean
   createdAt: string
+}
+
+export type ProductUnit = 'unit' | 'kg' | 'g' | 'l' | 'ml' | 'box' | 'portion'
+
+export type ProductCategory = {
+  id: string
+  name: string
+  isActive: boolean
+  createdAt: string
+}
+
+export type ProductCategoriesStatusFilter = 'active' | 'inactive' | 'all'
+
+export type ProductCategoriesListResponse = {
+  categories: ProductCategory[]
 }
 
 export type ProductsStatusFilter = 'active' | 'inactive' | 'all'
@@ -108,8 +125,9 @@ export type ProductsListResponse = {
 export type ProductMutationInput = {
   name: string
   sku?: string
-  unit: string
+  unit: ProductUnit
   cost: number
+  categoryId?: string | null
 }
 
 export class ApiError extends Error {
@@ -294,6 +312,49 @@ export async function updateProduct(
 export async function updateProductStatus(productId: string, isActive: boolean, token: string) {
   return apiRequest<{ product: Product }>(
     `/api/products/${productId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getProductCategories(status: ProductCategoriesStatusFilter, token: string) {
+  const searchParams = new URLSearchParams({ status })
+
+  return apiRequest<ProductCategoriesListResponse>(
+    `/api/product-categories?${searchParams.toString()}`,
+    { method: 'GET' },
+    token,
+  )
+}
+
+export async function createProductCategory(input: { name: string }, token: string) {
+  return apiRequest<{ category: ProductCategory }>(
+    '/api/product-categories',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateProductCategory(categoryId: string, input: { name: string }, token: string) {
+  return apiRequest<{ category: ProductCategory }>(
+    `/api/product-categories/${categoryId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateProductCategoryStatus(categoryId: string, isActive: boolean, token: string) {
+  return apiRequest<{ category: ProductCategory }>(
+    `/api/product-categories/${categoryId}/status`,
     {
       method: 'PATCH',
       body: JSON.stringify({ isActive }),

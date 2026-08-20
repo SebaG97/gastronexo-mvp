@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../../shared/components'
+import type { ProductCategory, ProductUnit } from '../../shared/lib/auth-api'
+import { productUnitCatalog } from './product-units'
 
 export type ProductFormValues = {
   name: string
   sku: string
-  unit: string
+  unit: ProductUnit
   cost: string
+  categoryId: string
 }
 
 type ProductFormSubmitPayload = {
   name: string
   sku?: string
-  unit: string
+  unit: ProductUnit
   cost: number
+  categoryId: string | null
 }
 
 type ProductFormProps = {
   initialValues?: ProductFormValues
+  categories: ProductCategory[]
   submitLabel: string
   isSubmitting: boolean
   onSubmit: (values: ProductFormSubmitPayload) => Promise<void>
@@ -28,10 +33,12 @@ const defaultValues: ProductFormValues = {
   sku: '',
   unit: 'unit',
   cost: '0',
+  categoryId: '',
 }
 
 export function ProductForm({
   initialValues = defaultValues,
+  categories,
   submitLabel,
   isSubmitting,
   onSubmit,
@@ -54,8 +61,8 @@ export function ProductForm({
     const nextErrors: Partial<Record<keyof ProductFormValues, string>> = {}
     const normalizedName = values.name.trim()
     const normalizedSku = values.sku.trim()
-    const normalizedUnit = values.unit.trim()
     const parsedCost = Number(values.cost)
+    const hasCategorySelection = values.categoryId.trim().length > 0
 
     if (!normalizedName) {
       nextErrors.name = 'El nombre es obligatorio.'
@@ -69,16 +76,16 @@ export function ProductForm({
       nextErrors.sku = 'El SKU no puede superar 80 caracteres.'
     }
 
-    if (!normalizedUnit) {
-      nextErrors.unit = 'La unidad es obligatoria.'
-    }
-
-    if (normalizedUnit.length > 24) {
-      nextErrors.unit = 'La unidad no puede superar 24 caracteres.'
+    if (!productUnitCatalog.some((entry) => entry.key === values.unit)) {
+      nextErrors.unit = 'Seleccioná una unidad válida.'
     }
 
     if (!Number.isFinite(parsedCost) || parsedCost < 0) {
       nextErrors.cost = 'El costo debe ser mayor o igual a 0.'
+    }
+
+    if (hasCategorySelection && !categories.some((category) => category.id === values.categoryId)) {
+      nextErrors.categoryId = 'Seleccioná una categoría válida.'
     }
 
     setErrors(nextErrors)
@@ -90,8 +97,9 @@ export function ProductForm({
     return {
       name: normalizedName,
       sku: normalizedSku || undefined,
-      unit: normalizedUnit,
+      unit: values.unit,
       cost: parsedCost,
+      categoryId: hasCategorySelection ? values.categoryId : null,
     }
   }
 
@@ -133,14 +141,38 @@ export function ProductForm({
 
       <label className="field">
         Unidad
-        <input
-          type="text"
+        <select
+          className="select-input"
           value={values.unit}
-          onChange={(event) => setField('unit', event.target.value)}
+          onChange={(event) => setField('unit', event.target.value as ProductUnit)}
           disabled={isSubmitting}
           required
-        />
+        >
+          {productUnitCatalog.map((entry) => (
+            <option key={entry.key} value={entry.key}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
         {errors.unit ? <span className="form-error">{errors.unit}</span> : null}
+      </label>
+
+      <label className="field">
+        Categoría (opcional)
+        <select
+          className="select-input"
+          value={values.categoryId}
+          onChange={(event) => setField('categoryId', event.target.value)}
+          disabled={isSubmitting}
+        >
+          <option value="">Sin categoría</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+        {errors.categoryId ? <span className="form-error">{errors.categoryId}</span> : null}
       </label>
 
       <label className="field">

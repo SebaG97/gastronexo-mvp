@@ -3,13 +3,18 @@ import { Button, Panel, StatusBadge } from '../../shared/components'
 import {
   ApiError,
   createProduct,
+  getProductCategories,
   getProducts,
   updateProduct,
   updateProductStatus,
+  type ProductCategory,
+  type ProductMutationInput,
   type Product,
   type ProductsStatusFilter,
 } from '../../shared/lib/auth-api'
+import { ProductCategoriesManager } from './ProductCategoriesManager'
 import { ProductForm, type ProductFormValues } from './ProductForm'
+import { productUnitLabelByKey } from './product-units'
 
 const PAGE_SIZE = 10
 
@@ -39,6 +44,7 @@ function toFormValues(product: Product): ProductFormValues {
     sku: product.sku ?? '',
     unit: product.unit,
     cost: String(product.cost),
+    categoryId: product.categoryId ?? '',
   }
 }
 
@@ -56,6 +62,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
   const [pendingProductId, setPendingProductId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [activeCategories, setActiveCategories] = useState<ProductCategory[]>([])
 
   const canShowEmptyState = useMemo(
     () => !isLoading && products.length === 0 && !errorMessage,
@@ -110,11 +117,24 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     }
   }
 
+  async function loadActiveCategories() {
+    try {
+      const response = await getProductCategories('active', token)
+      setActiveCategories(response.categories)
+    } catch {
+      setActiveCategories([])
+    }
+  }
+
   useEffect(() => {
     void loadProducts()
   }, [debouncedSearchTerm, page, status, token])
 
-  async function handleCreate(values: { name: string; sku?: string; unit: string; cost: number }) {
+  useEffect(() => {
+    void loadActiveCategories()
+  }, [token])
+
+  async function handleCreate(values: ProductMutationInput) {
     setErrorMessage(null)
     setSuccessMessage(null)
     setIsSubmitting(true)
@@ -135,7 +155,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     }
   }
 
-  async function handleEdit(values: { name: string; sku?: string; unit: string; cost: number }) {
+  async function handleEdit(values: ProductMutationInput) {
     if (formMode.type !== 'edit') {
       return
     }
@@ -158,6 +178,10 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function handleCategoriesChanged() {
+    await Promise.all([loadActiveCategories(), loadProducts()])
   }
 
   async function handleToggleStatus(product: Product) {
@@ -203,6 +227,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
         >
           <ProductForm
             initialValues={formMode.type === 'edit' ? toFormValues(formMode.product) : undefined}
+            categories={activeCategories}
             submitLabel={formMode.type === 'create' ? 'Crear producto' : 'Guardar cambios'}
             isSubmitting={isSubmitting}
             onSubmit={(values) =>
@@ -250,6 +275,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
               <tr>
                 <th>Nombre</th>
                 <th>SKU</th>
+                <th>Categoría</th>
                 <th>Unidad</th>
                 <th>Costo</th>
                 <th>Estado</th>
@@ -261,7 +287,8 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                 <tr key={product.id}>
                   <td>{product.name}</td>
                   <td>{product.sku ?? '—'}</td>
-                  <td>{product.unit}</td>
+                  <td>{product.categoryName ?? 'Sin categoría'}</td>
+                  <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
                   <td>{formatCost(product.cost)}</td>
                   <td>
                     <StatusBadge tone={product.isActive ? 'success' : 'warning'}>
@@ -316,6 +343,14 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
             </Button>
           </div>
         </div>
+      </Panel>
+
+      <Panel className="products-panel" title="Categorías">
+        <ProductCategoriesManager
+          token={token}
+          canWriteProducts={canWriteProducts}
+          onChanged={handleCategoriesChanged}
+        />
       </Panel>
 
       {errorMessage ? (

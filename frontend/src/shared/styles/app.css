@@ -508,6 +508,35 @@
   gap: 8px;
 }
 
+.products-categories {
+  display: grid;
+  gap: 10px;
+}
+
+.products-categories__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.products-categories__filter {
+  width: 180px;
+  margin: 0;
+}
+
+.products-categories__create {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.products-categories__field {
+  min-width: 240px;
+  margin: 0;
+}
+
 .members-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 180px auto;
@@ -618,6 +647,16 @@
   .products-toolbar,
   .products-form {
     grid-template-columns: 1fr;
+  }
+
+  .products-categories__create {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .products-categories__field {
+    min-width: 0;
   }
 
   .members-table__actions {
