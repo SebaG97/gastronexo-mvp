@@ -2,11 +2,11 @@ import { Activity, AlertTriangle, Clock3, PackageX } from 'lucide-react'
 import { Panel, StatusBadge } from '../../shared/components'
 
 const kpis = [
-  { label: 'Facturación día', value: '$ 248.500', trend: '+8,4% vs. ayer' },
-  { label: 'Facturación semana', value: '$ 1.642.800', trend: '+5,1% vs. semana anterior' },
-  { label: 'Facturación mes', value: '$ 6.384.250', trend: '+12,3% vs. mes anterior' },
-  { label: 'Compras mes', value: '$ 2.105.640', trend: '32,9% de facturación' },
-  { label: 'Costo de merma', value: '$ 86.700', trend: '1,4% de facturación' },
+  { label: 'Facturación día', value: 'Gs. 1.850.000', trend: '+8,4% vs. ayer' },
+  { label: 'Facturación semana', value: 'Gs. 12.430.000', trend: '+5,1% vs. semana anterior' },
+  { label: 'Facturación mes', value: 'Gs. 48.750.000', trend: '+12,3% vs. mes anterior' },
+  { label: 'Compras mes', value: 'Gs. 16.050.000', trend: '32,9% de facturación' },
+  { label: 'Costo de merma', value: 'Gs. 675.000', trend: '1,4% de facturación' },
   { label: 'Margen estimado', value: '34,8%', trend: '+1,2 pts. este mes' },
 ]
 
