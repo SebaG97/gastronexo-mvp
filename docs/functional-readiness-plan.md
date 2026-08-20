@@ -5,6 +5,7 @@
 - [x] Épica 0 · Misión 0.1 — Entorno PostgreSQL local reproducible
 - [x] Épica 0 · Misión 0.2 — Health, readiness y manejo seguro de conexión PostgreSQL
 - [x] Épica 1 · Misión 1.1 — Sesiones seguras y perfil actual
+- [x] Épica 1 · Misión 1.2 — Autorización por roles aplicada en API
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -117,3 +118,44 @@
 - Recargar navegador y verificar persistencia de sesión por `localStorage` + `/api/auth/me`.
 - Cerrar sesión y verificar limpieza de token/estado.
 - Invocar `/api/auth/me` con token inválido y validar respuesta `401`.
+
+## Misión 1.2 · Registro de ejecución
+
+### Decisiones tomadas
+
+- Se creó un módulo reutilizable de autorización en `backend/src/security/authorization.ts` con:
+  - validación de JWT por request;
+  - resolución de membresía actual desde PostgreSQL (`memberships` + `users` + `organizations`) con `sub` + `organizationId`;
+  - guard `requireOrganizationRole(...roles)` para usar por ruta;
+  - capacidades derivadas en servidor por rol (`canReadProducts`, `canWriteProducts`, `canWriteAdmin`).
+- El backend ya no confía exclusivamente en `request.user.role` del token para autorizar: usa el rol vigente en DB en cada request protegido.
+- Manejo de errores genérico y consistente:
+  - `401` para token inválido/expirado;
+  - `403` para membresía inexistente o rol sin permiso.
+- Se evitó duplicar lógica entre auth y módulos de dominio usando `getOrganizationAccess` como fuente única de contexto autorizado.
+
+### Matriz mínima aplicada
+
+- `owner`: lectura y escritura administrativa (`canReadProducts: true`, `canWriteProducts: true`, `canWriteAdmin: true`).
+- `admin`: lectura y escritura administrativa (`canReadProducts: true`, `canWriteProducts: true`, `canWriteAdmin: true`).
+- `operator`: lectura y escritura operativa de productos (`canReadProducts: true`, `canWriteProducts: true`, `canWriteAdmin: false`).
+- `viewer`: solo lectura (`canReadProducts: true`, `canWriteProducts: false`, `canWriteAdmin: false`).
+- Sin membresía activa: sin acceso (`403`).
+
+### Endpoints y alcance
+
+- `GET /api/products`: permitido para `owner`, `admin`, `operator`, `viewer`.
+- `POST /api/products`: permitido para `owner`, `admin`, `operator`; `viewer` recibe `403`.
+- `GET /api/auth/me`: mantiene sesión actual y ahora incluye `organization.capabilities` derivadas del rol vigente en DB.
+- `GET /api/auth/permissions`: endpoint protegido para verificar rol/capacidades efectivas del usuario en la organización activa.
+
+### Frontend
+
+- Se actualizó el contrato de sesión (`frontend/src/shared/lib/auth-api.ts`) para incluir capacidades en `organization`.
+- En shell de la app, la acción primaria de Productos se deshabilita para `viewer`.
+- La autorización efectiva permanece en backend aunque el botón no se muestre/permita en UI.
+
+### Limitaciones (intencionalmente fuera de alcance)
+
+- No se incorporaron invitaciones de usuarios, cambio de organización activa, refresh tokens ni recuperación de contraseña.
+- No se modificaron migraciones ni esquema de base de datos.

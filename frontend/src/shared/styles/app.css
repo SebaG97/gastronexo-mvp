@@ -209,6 +209,11 @@
   background: var(--sys-primary-hover);
 }
 
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .button--secondary {
   border-color: var(--sys-border);
   color: var(--sys-text);

@@ -126,10 +126,13 @@ export function App() {
   }
 
   const metadata = sectionMetadata[activeSection]
+  const isPrimaryActionDisabled =
+    activeSection === 'products' && !session.organization.capabilities.canWriteProducts
 
   return (
     <SystemShell
       activeSection={activeSection}
+      isPrimaryActionDisabled={isPrimaryActionDisabled}
       onLogout={handleLogout}
       onNavigate={setActiveSection}
       onPrimaryAction={() => window.alert(`${metadata.action}: flujo pendiente de implementación.`)}

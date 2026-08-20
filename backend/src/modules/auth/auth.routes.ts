@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import { pool } from '../../db/pool.js'
+import { getOrganizationAccess, getRoleCapabilities } from '../../security/authorization.js'
 import type { MembershipRole } from './auth.types.js'
 
 const registerSchema = z.object({
@@ -47,52 +48,35 @@ function createToken(
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   app.get('/me', async (request, reply) => {
-    await request.jwtVerify()
-
-    const currentSession = await pool.query<{
-      id: string
-      email: string
-      fullName: string
-      organizationId: string
-      organizationName: string
-      organizationSlug: string
-      role: MembershipRole
-    }>(
-      `SELECT
-        u.id,
-        u.email,
-        u.full_name AS "fullName",
-        o.id AS "organizationId",
-        o.name AS "organizationName",
-        o.slug AS "organizationSlug",
-        m.role
-       FROM memberships m
-       JOIN users u ON u.id = m.user_id
-       JOIN organizations o ON o.id = m.organization_id
-       WHERE m.user_id = $1
-         AND m.organization_id = $2
-       LIMIT 1`,
-      [request.user.sub, request.user.organizationId],
-    )
-
-    const session = currentSession.rows[0]
-
-    if (!session) {
-      return reply.code(401).send({ message: 'Sesión inválida o expirada.' })
+    const access = await getOrganizationAccess(request, reply)
+    if (!access) {
+      return
     }
 
     return {
-      user: {
-        id: session.id,
-        email: session.email,
-        fullName: session.fullName,
-      },
+      user: access.user,
       organization: {
-        id: session.organizationId,
-        name: session.organizationName,
-        slug: session.organizationSlug,
-        role: session.role,
+        id: access.organization.id,
+        name: access.organization.name,
+        slug: access.organization.slug,
+        role: access.role,
+        capabilities: access.capabilities,
       },
+    }
+  })
+
+  app.get('/permissions', async (request, reply) => {
+    const access = await getOrganizationAccess(request, reply)
+    if (!access) {
+      return
+    }
+
+    return {
+      organization: {
+        id: access.organization.id,
+        role: access.role,
+      },
+      capabilities: access.capabilities,
     }
   })
 
@@ -151,6 +135,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           name: organization.rows[0].name,
           slug: organization.rows[0].slug,
           role: activeMembership.role,
+          capabilities: getRoleCapabilities(activeMembership.role),
         },
       })
     } catch (error) {
@@ -204,12 +189,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         name: activeMembership.organizationName,
         slug: activeMembership.organizationSlug,
         role: activeMembership.role,
+        capabilities: getRoleCapabilities(activeMembership.role),
       },
       organizations: memberships.rows.map((membership) => ({
         id: membership.organizationId,
         name: membership.organizationName,
         slug: membership.organizationSlug,
         role: membership.role,
+        capabilities: getRoleCapabilities(membership.role),
       })),
     }
   })

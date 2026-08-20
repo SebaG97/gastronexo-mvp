@@ -4,6 +4,12 @@ const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
 type MembershipRole = 'owner' | 'admin' | 'operator' | 'viewer'
 
+export type OrganizationCapabilities = {
+  canReadProducts: boolean
+  canWriteProducts: boolean
+  canWriteAdmin: boolean
+}
+
 export type AuthUser = {
   id: string
   email: string
@@ -15,6 +21,7 @@ export type SessionOrganization = {
   name: string
   slug: string
   role: MembershipRole
+  capabilities: OrganizationCapabilities
 }
 
 export type AuthSession = {
