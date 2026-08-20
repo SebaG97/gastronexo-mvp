@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { config } from '../../config.js'
@@ -25,6 +25,10 @@ const loginSchema = z.object({
   organizationId: z.string().uuid().optional(),
 })
 
+const switchOrganizationSchema = z.object({
+  organizationId: z.string().uuid(),
+})
+
 type MembershipRecord = {
   organizationId: string
   organizationName: string
@@ -46,7 +50,95 @@ function createToken(
   )
 }
 
+async function verifySession(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    await request.jwtVerify()
+    return true
+  } catch {
+    reply.code(401).send({ message: 'Sesión inválida o expirada.' })
+    return false
+  }
+}
+
+type UserMembershipRow = MembershipRecord & {
+  organizationSlug: string
+}
+
+async function getUserMemberships(userId: string) {
+  return pool.query<UserMembershipRow>(
+    `SELECT
+      m.organization_id AS "organizationId",
+      m.role,
+      o.name AS "organizationName",
+      o.slug AS "organizationSlug"
+     FROM memberships m
+     JOIN organizations o ON o.id = m.organization_id
+     WHERE m.user_id = $1
+     ORDER BY o.created_at ASC`,
+    [userId],
+  )
+}
+
 export const authRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/organizations', async (request, reply) => {
+    const isValidSession = await verifySession(request, reply)
+    if (!isValidSession) {
+      return
+    }
+
+    const memberships = await getUserMemberships(request.user.sub)
+
+    return {
+      organizations: memberships.rows.map((membership) => ({
+        id: membership.organizationId,
+        name: membership.organizationName,
+        slug: membership.organizationSlug,
+        role: membership.role,
+        capabilities: getRoleCapabilities(membership.role),
+      })),
+    }
+  })
+
+  app.post('/switch-organization', async (request, reply) => {
+    const isValidSession = await verifySession(request, reply)
+    if (!isValidSession) {
+      return
+    }
+
+    const input = switchOrganizationSchema.parse(request.body)
+
+    const membershipResult = await pool.query<UserMembershipRow>(
+      `SELECT
+        m.organization_id AS "organizationId",
+        m.role,
+        o.name AS "organizationName",
+        o.slug AS "organizationSlug"
+       FROM memberships m
+       JOIN organizations o ON o.id = m.organization_id
+       WHERE m.user_id = $1
+         AND m.organization_id = $2
+       LIMIT 1`,
+      [request.user.sub, input.organizationId],
+    )
+
+    const membership = membershipResult.rows[0]
+
+    if (!membership) {
+      return reply.code(403).send({ message: 'No tenés permisos para realizar esta acción.' })
+    }
+
+    return {
+      token: createToken(app, request.user.sub, membership),
+      organization: {
+        id: membership.organizationId,
+        name: membership.organizationName,
+        slug: membership.organizationSlug,
+        role: membership.role,
+        capabilities: getRoleCapabilities(membership.role),
+      },
+    }
+  })
+
   app.get('/me', async (request, reply) => {
     const access = await getOrganizationAccess(request, reply)
     if (!access) {
@@ -160,18 +252,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(401).send({ message: 'Email o contraseña incorrectos.' })
     }
 
-    const memberships = await pool.query<MembershipRecord & { organizationSlug: string }>(
-      `SELECT
-        m.organization_id AS "organizationId",
-        m.role,
-        o.name AS "organizationName",
-        o.slug AS "organizationSlug"
-       FROM memberships m
-       JOIN organizations o ON o.id = m.organization_id
-       WHERE m.user_id = $1
-       ORDER BY o.created_at ASC`,
-      [user.id],
-    )
+    const memberships = await getUserMemberships(user.id)
 
     const activeMembership =
       memberships.rows.find((membership) => membership.organizationId === input.organizationId) ??

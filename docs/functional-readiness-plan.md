@@ -6,6 +6,7 @@
 - [x] Épica 0 · Misión 0.2 — Health, readiness y manejo seguro de conexión PostgreSQL
 - [x] Épica 1 · Misión 1.1 — Sesiones seguras y perfil actual
 - [x] Épica 1 · Misión 1.2 — Autorización por roles aplicada en API
+- [x] Épica 1 · Misión 1.3 — Organización activa y gestión básica de miembros
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -159,3 +160,62 @@
 
 - No se incorporaron invitaciones de usuarios, cambio de organización activa, refresh tokens ni recuperación de contraseña.
 - No se modificaron migraciones ni esquema de base de datos.
+
+## Misión 1.3 · Registro de ejecución
+
+### Decisiones tomadas
+
+- Se agregó soporte explícito de múltiples organizaciones por usuario autenticado sin romper el flujo JWT actual.
+- El backend valida membresía vigente en PostgreSQL para listar organizaciones y para cambiar organización activa antes de emitir un nuevo token.
+- La emisión del token en `switch-organization` conserva expiración configurable (`JWT_EXPIRES_IN`) y actualiza `organizationId` + `role` según estado real en DB.
+- Se incorporó módulo `organization-members` protegido con `owner/admin`, reutilizando `requireOrganizationRole(...)` y capacidades existentes; no se duplicó matriz de roles.
+- Las operaciones de alta, cambio de rol y revocación de membresías se ejecutan con transacciones.
+- Se agregó metadata de acciones por miembro en `GET /api/organization/members` para mejorar UX (roles asignables y revocación permitida), manteniendo backend como autoridad final de permisos.
+
+### Endpoints agregados
+
+- `GET /api/auth/organizations` (JWT): lista organizaciones donde el usuario tiene membresía activa.
+  - Respuesta por organización: `id`, `name`, `slug`, `role`, `capabilities`.
+- `POST /api/auth/switch-organization` (JWT): cambia organización activa con body `{ organizationId }`.
+  - Verifica pertenencia en DB.
+  - Si pertenece: devuelve `token` nuevo y `organization` activa con capacidades.
+  - Si no pertenece: `403` genérico.
+- `GET /api/organization/members` (`owner|admin`): lista miembros de organización activa con `fullName`, `email`, `role` y acciones permitidas.
+- `POST /api/organization/members` (`owner|admin`): agrega usuario existente por `email` con rol `operator|viewer`.
+- `PATCH /api/organization/members/:userId` (`owner|admin`): cambia rol entre `admin|operator|viewer`.
+- `DELETE /api/organization/members/:userId` (`owner|admin`): revoca membresía.
+
+### Reglas aplicadas
+
+- Solo `owner` puede promover o degradar `admin`.
+- No se permite degradar ni revocar al último `owner`.
+- Un `owner` no puede revocar su propia membresía por estos endpoints.
+- `owner` no es asignable por API en esta misión.
+- Para actualización/revocación de miembro inexistente en la organización activa: `404` genérico.
+- Se evita filtrar información entre organizaciones (validación estricta por `organization_id` activa).
+
+### Frontend
+
+- Se agregó selector de organización activa en `SystemShell`:
+  - muestra organización actual,
+  - consume organizaciones disponibles,
+  - ejecuta `POST /api/auth/switch-organization`, reemplaza token y refresca sesión.
+- El cambio de organización muestra estados de carga/error y no cierra sesión ni navega fuera del contexto en caso de fallo.
+- Se agregó vista de miembros para `owner/admin`:
+  - listado de miembros (`nombre`, `email`, `rol`),
+  - alta por email como `operator/viewer`,
+  - cambio de rol y revocación según acciones permitidas informadas por API,
+  - estados de carga, vacío, error y éxito.
+
+### Validación de misión
+
+- Build backend: `cd backend && npm.cmd run build` ✅
+- Build frontend: `cd frontend && npm.cmd run build` ✅
+- Prueba manual/e2e local ejecutada:
+  - usuario A con organización A;
+  - usuario B con organización B;
+  - B agregado a A como `viewer`;
+  - login como B, cambio de organización B → A (`switch-organization`) exitoso;
+  - con token de A, B solo ve datos de A y no puede escribir productos (bloqueo `403` por rol `viewer`);
+  - intento de `admin` para gestionar otro `admin` bloqueado (`403`);
+  - intento de degradar/revocar último `owner` bloqueado (`409`).

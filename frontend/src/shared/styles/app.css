@@ -141,10 +141,43 @@
   font-size: 18px;
 }
 
+.topbar__identity {
+  display: grid;
+  gap: 4px;
+}
+
+.organization-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.organization-switcher__label,
+.organization-switcher__name {
+  color: var(--sys-text-muted);
+  font-size: 12px;
+}
+
+.organization-switcher__name {
+  font-weight: 650;
+}
+
 .topbar__actions {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.topbar__feedback {
+  margin: 0;
+  padding: 8px 28px 0;
+  color: var(--sys-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topbar__feedback--error {
+  color: var(--sys-danger);
 }
 
 .icon-button {
@@ -216,6 +249,15 @@
 
 .button--secondary {
   border-color: var(--sys-border);
+  color: var(--sys-text);
+  background: var(--sys-surface);
+}
+
+.select-input {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
   color: var(--sys-text);
   background: var(--sys-surface);
 }
@@ -368,6 +410,67 @@
   gap: 8px;
 }
 
+.members-page {
+  display: grid;
+  gap: 12px;
+}
+
+.members-panel {
+  max-width: 980px;
+}
+
+.members-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.members-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.members-table th,
+.members-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--sys-border);
+  text-align: left;
+  font-size: 14px;
+}
+
+.members-table th {
+  color: var(--sys-text-muted);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.members-table__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.members-message {
+  margin: 0;
+  max-width: 980px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--sys-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.members-message--error {
+  color: var(--sys-danger);
+  background: var(--sys-danger-bg);
+}
+
+.members-message--success {
+  color: var(--sys-success);
+  background: color-mix(in srgb, var(--sys-success) 12%, transparent);
+}
+
 @media (max-width: 1050px) {
   .dashboard-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -408,6 +511,23 @@
   .page {
     padding-right: 16px;
     padding-left: 16px;
+  }
+
+  .topbar__feedback {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .organization-switcher {
+    flex-wrap: wrap;
+  }
+
+  .members-form {
+    grid-template-columns: 1fr;
+  }
+
+  .members-table__actions {
+    flex-wrap: wrap;
   }
 
   .dashboard-grid,

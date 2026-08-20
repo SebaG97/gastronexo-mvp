@@ -30,6 +30,10 @@ export type AuthSession = {
   organization: SessionOrganization
 }
 
+export type OrganizationMembershipListResponse = {
+  organizations: SessionOrganization[]
+}
+
 export type AuthMeResponse = {
   user: AuthUser
   organization: SessionOrganization
@@ -43,6 +47,33 @@ export type AuthLoginRequest = {
 
 export type AuthLoginResponse = AuthSession & {
   organizations: SessionOrganization[]
+}
+
+export type AuthSwitchOrganizationRequest = {
+  organizationId: string
+}
+
+export type AuthSwitchOrganizationResponse = {
+  token: string
+  organization: SessionOrganization
+}
+
+type MemberRole = MembershipRole
+
+export type OrganizationMember = {
+  userId: string
+  fullName: string
+  email: string
+  role: MemberRole
+  actions: {
+    canChangeRole: boolean
+    assignableRoles: Array<'admin' | 'operator' | 'viewer'>
+    canRevoke: boolean
+  }
+}
+
+export type OrganizationMembersResponse = {
+  members: OrganizationMember[]
 }
 
 export class ApiError extends Error {
@@ -121,4 +152,55 @@ export async function login(input: AuthLoginRequest) {
 
 export async function getCurrentSession(token: string) {
   return apiRequest<AuthMeResponse>('/api/auth/me', { method: 'GET' }, token)
+}
+
+export async function getUserOrganizations(token: string) {
+  return apiRequest<OrganizationMembershipListResponse>('/api/auth/organizations', { method: 'GET' }, token)
+}
+
+export async function switchOrganization(input: AuthSwitchOrganizationRequest, token: string) {
+  return apiRequest<AuthSwitchOrganizationResponse>(
+    '/api/auth/switch-organization',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function getOrganizationMembers(token: string) {
+  return apiRequest<OrganizationMembersResponse>('/api/organization/members', { method: 'GET' }, token)
+}
+
+export async function addOrganizationMember(
+  input: { email: string; role: 'operator' | 'viewer' },
+  token: string,
+) {
+  return apiRequest<{ member: { userId: string; fullName: string; email: string; role: MemberRole } }>(
+    '/api/organization/members',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateOrganizationMemberRole(
+  input: { userId: string; role: 'admin' | 'operator' | 'viewer' },
+  token: string,
+) {
+  return apiRequest<{ member: { userId: string; role: MemberRole } }>(
+    `/api/organization/members/${input.userId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role: input.role }),
+    },
+    token,
+  )
+}
+
+export async function revokeOrganizationMember(userId: string, token: string) {
+  return apiRequest<void>(`/api/organization/members/${userId}`, { method: 'DELETE' }, token)
 }
