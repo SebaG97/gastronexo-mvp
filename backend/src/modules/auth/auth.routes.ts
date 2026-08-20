@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import { config } from '../../config.js'
 import { pool } from '../../db/pool.js'
 import type { MembershipRole } from './auth.types.js'
 
@@ -34,14 +35,67 @@ function createToken(
   userId: string,
   membership: MembershipRecord,
 ) {
-  return app.jwt.sign({
-    sub: userId,
-    organizationId: membership.organizationId,
-    role: membership.role,
-  })
+  return app.jwt.sign(
+    {
+      sub: userId,
+      organizationId: membership.organizationId,
+      role: membership.role,
+    },
+    { expiresIn: config.JWT_EXPIRES_IN },
+  )
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/me', async (request, reply) => {
+    await request.jwtVerify()
+
+    const currentSession = await pool.query<{
+      id: string
+      email: string
+      fullName: string
+      organizationId: string
+      organizationName: string
+      organizationSlug: string
+      role: MembershipRole
+    }>(
+      `SELECT
+        u.id,
+        u.email,
+        u.full_name AS "fullName",
+        o.id AS "organizationId",
+        o.name AS "organizationName",
+        o.slug AS "organizationSlug",
+        m.role
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       JOIN organizations o ON o.id = m.organization_id
+       WHERE m.user_id = $1
+         AND m.organization_id = $2
+       LIMIT 1`,
+      [request.user.sub, request.user.organizationId],
+    )
+
+    const session = currentSession.rows[0]
+
+    if (!session) {
+      return reply.code(401).send({ message: 'Sesión inválida o expirada.' })
+    }
+
+    return {
+      user: {
+        id: session.id,
+        email: session.email,
+        fullName: session.fullName,
+      },
+      organization: {
+        id: session.organizationId,
+        name: session.organizationName,
+        slug: session.organizationSlug,
+        role: session.role,
+      },
+    }
+  })
+
   app.post('/register', async (request, reply) => {
     const input = registerSchema.parse(request.body)
     const passwordHash = await bcrypt.hash(input.password, 12)

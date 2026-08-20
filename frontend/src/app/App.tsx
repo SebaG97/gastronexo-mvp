@@ -6,6 +6,13 @@ import { ProductionView } from '../features/production/ProductionView'
 import { SalesView } from '../features/sales/SalesView'
 import { StockView } from '../features/stock/StockView'
 import { WasteView } from '../features/waste/WasteView'
+import {
+  clearStoredToken,
+  getCurrentSession,
+  getStoredToken,
+  login,
+  type AuthSession,
+} from '../shared/lib/auth-api'
 import { LoginView } from './components/LoginView'
 import { SystemShell, type AppSection } from './components/SystemShell'
 
@@ -20,7 +27,10 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
 }
 
 export function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>(
+    'checking',
+  )
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
@@ -42,8 +52,77 @@ export function App() {
     return views[activeSection]
   }, [activeSection])
 
-  if (!isAuthenticated) {
-    return <LoginView onLogin={() => setIsAuthenticated(true)} />
+  useEffect(() => {
+    const token = getStoredToken()
+
+    if (!token) {
+      setAuthStatus('unauthenticated')
+      return
+    }
+
+    let cancelled = false
+
+    const recoverSession = async () => {
+      try {
+        const response = await getCurrentSession(token)
+
+        if (cancelled) {
+          return
+        }
+
+        setSession({
+          token,
+          user: response.user,
+          organization: response.organization,
+        })
+        setAuthStatus('authenticated')
+      } catch {
+        if (cancelled) {
+          return
+        }
+
+        clearStoredToken()
+        setSession(null)
+        setAuthStatus('unauthenticated')
+      }
+    }
+
+    void recoverSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleLogin(credentials: { email: string; password: string }) {
+    const response = await login(credentials)
+
+    setSession({
+      token: response.token,
+      user: response.user,
+      organization: response.organization,
+    })
+    setAuthStatus('authenticated')
+  }
+
+  function handleLogout() {
+    clearStoredToken()
+    setSession(null)
+    setAuthStatus('unauthenticated')
+  }
+
+  if (authStatus === 'checking') {
+    return (
+      <main className="login-page" aria-busy="true" aria-live="polite">
+        <section className="login-card">
+          <p>Validando sesión...</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (authStatus !== 'authenticated' || !session) {
+    return <LoginView onLogin={handleLogin} />
   }
 
   const metadata = sectionMetadata[activeSection]
@@ -51,7 +130,7 @@ export function App() {
   return (
     <SystemShell
       activeSection={activeSection}
-      onLogout={() => setIsAuthenticated(false)}
+      onLogout={handleLogout}
       onNavigate={setActiveSection}
       onPrimaryAction={() => window.alert(`${metadata.action}: flujo pendiente de implementación.`)}
       onThemeToggle={() => setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'))}

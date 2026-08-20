@@ -51,6 +51,13 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
 }
 
+.login-card__error {
+  margin: 0;
+  color: var(--sys-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .shell {
   display: grid;
   min-height: 100vh;

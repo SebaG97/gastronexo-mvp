@@ -4,6 +4,7 @@
 
 - [x] Épica 0 · Misión 0.1 — Entorno PostgreSQL local reproducible
 - [x] Épica 0 · Misión 0.2 — Health, readiness y manejo seguro de conexión PostgreSQL
+- [x] Épica 1 · Misión 1.1 — Sesiones seguras y perfil actual
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -82,3 +83,37 @@
   - la API finalizó con código `1`;
   - el log indicó indisponibilidad de PostgreSQL sin exponer `DATABASE_URL`, usuario ni contraseña.
 - PostgreSQL quedó nuevamente levantado al finalizar la validación.
+
+## Misión 1.1 · Registro de ejecución
+
+### Decisiones tomadas
+
+- Se agregó `GET /api/auth/me` protegido con JWT para recuperar sesión actual desde API.
+- La sesión se valida contra PostgreSQL por pertenencia activa: se consulta `users` + `organizations` + `memberships` usando `sub` y `organizationId` del token.
+- Si la sesión no corresponde a una membresía activa (usuario/organización/membresía inexistente o inconsistente), la API responde `401` con mensaje genérico sin filtrar información.
+- Se definió expiración explícita de JWT vía `JWT_EXPIRES_IN` (ejemplo de desarrollo: `8h`), validada en `backend/src/config.ts`.
+- `register` y `login` mantienen su contrato previo; solo cambia que los tokens emitidos ahora incluyen expiración configurada.
+- En frontend se reemplazó auth simulada por flujo real:
+  - `POST /api/auth/login` para autenticar y guardar token;
+  - `GET /api/auth/me` al iniciar para rehidratar sesión;
+  - limpieza automática de sesión local ante `401`.
+- El token se almacena en `localStorage` con clave namespaced: `gastronexo:auth:token`.
+
+### Contrato de sesión
+
+- `POST /api/auth/login` devuelve:
+  - `token`
+  - `user` (`id`, `email`, `fullName`)
+  - `organization` (`id`, `name`, `slug`, `role`)
+  - `organizations` (lista de membresías disponibles)
+- `GET /api/auth/me` requiere `Authorization: Bearer <token>` y devuelve:
+  - `user` (`id`, `email`, `fullName`)
+  - `organization` (`id`, `name`, `slug`, `role`)
+
+### Validaciones previstas para cierre de misión
+
+- Registrar usuario + organización nueva.
+- Iniciar sesión desde frontend con credenciales válidas.
+- Recargar navegador y verificar persistencia de sesión por `localStorage` + `/api/auth/me`.
+- Cerrar sesión y verificar limpieza de token/estado.
+- Invocar `/api/auth/me` con token inválido y validar respuesta `401`.
