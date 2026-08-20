@@ -219,3 +219,15 @@
   - con token de A, B solo ve datos de A y no puede escribir productos (bloqueo `403` por rol `viewer`);
   - intento de `admin` para gestionar otro `admin` bloqueado (`403`);
   - intento de degradar/revocar último `owner` bloqueado (`409`).
+
+### Corrección puntual de robustez en error handler (Fastify parse 400)
+
+- Contexto: una petición `DELETE` con `Content-Type: application/json` y body vacío puede generar error de parseo en Fastify (`400`).
+- Ajuste aplicado: el handler global ahora preserva errores `400` de cliente y responde mensaje genérico seguro `{ "message": "Solicitud inválida." }` en lugar de escalar a `500`.
+- Comportamientos preservados:
+  - Zod: `400` con `Datos de entrada inválidos.` + `issues`.
+  - JWT inválido/expirado: `401` con mensaje genérico de sesión.
+  - Errores inesperados: `500` con `Ocurrió un error inesperado.`
+- Validación manual de regresión:
+  - request: `DELETE /api/organization/members/:userId` con header `Content-Type: application/json` y body vacío;
+  - resultado esperado/obtenido tras el ajuste: `400` con `{ "message": "Solicitud inválida." }`.

@@ -29,6 +29,16 @@ export function buildApp() {
       typeof error === 'object' &&
       error !== null &&
       'statusCode' in error &&
+      typeof error.statusCode === 'number' &&
+      error.statusCode === 400
+    ) {
+      return reply.code(400).send({ message: 'Solicitud inválida.' })
+    }
+
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
       error.statusCode === 401
     ) {
       return reply.code(401).send({ message: 'Sesión inválida o expirada.' })
