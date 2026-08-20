@@ -76,6 +76,42 @@ export type OrganizationMembersResponse = {
   members: OrganizationMember[]
 }
 
+export type Product = {
+  id: string
+  name: string
+  sku: string | null
+  unit: string
+  cost: number
+  isActive: boolean
+  createdAt: string
+}
+
+export type ProductsStatusFilter = 'active' | 'inactive' | 'all'
+
+export type ProductsListRequest = {
+  q?: string
+  status?: ProductsStatusFilter
+  page?: number
+  pageSize?: number
+}
+
+export type ProductsListResponse = {
+  products: Product[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type ProductMutationInput = {
+  name: string
+  sku?: string
+  unit: string
+  cost: number
+}
+
 export class ApiError extends Error {
   public readonly status: number
 
@@ -203,4 +239,65 @@ export async function updateOrganizationMemberRole(
 
 export async function revokeOrganizationMember(userId: string, token: string) {
   return apiRequest<void>(`/api/organization/members/${userId}`, { method: 'DELETE' }, token)
+}
+
+export async function getProducts(query: ProductsListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<ProductsListResponse>(`/api/products${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getProductById(productId: string, token: string) {
+  return apiRequest<{ product: Product }>(`/api/products/${productId}`, { method: 'GET' }, token)
+}
+
+export async function createProduct(input: ProductMutationInput, token: string) {
+  return apiRequest<{ product: Product }>(
+    '/api/products',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateProduct(
+  productId: string,
+  input: Partial<ProductMutationInput>,
+  token: string,
+) {
+  return apiRequest<{ product: Product }>(
+    `/api/products/${productId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateProductStatus(productId: string, isActive: boolean, token: string) {
+  return apiRequest<{ product: Product }>(
+    `/api/products/${productId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
 }

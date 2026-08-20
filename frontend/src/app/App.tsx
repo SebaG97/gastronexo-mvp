@@ -42,6 +42,7 @@ export function App() {
   const [isSwitchingOrganization, setIsSwitchingOrganization] = useState(false)
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [productCreateRequestId, setProductCreateRequestId] = useState(0)
 
   const canManageMembers =
     session?.organization.role === 'owner' || session?.organization.role === 'admin'
@@ -51,9 +52,19 @@ export function App() {
   }, [theme])
 
   const view = useMemo(() => {
+    const canWriteProducts = session?.organization.capabilities.canWriteProducts ?? false
+
     const views: Record<AppSection, JSX.Element> = {
       dashboard: <DashboardView />,
-      products: <ProductsView />,
+      products: session ? (
+        <ProductsView
+          token={session.token}
+          canWriteProducts={canWriteProducts}
+          createRequestId={productCreateRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
       purchases: <PurchasesView />,
       production: <ProductionView />,
       waste: <WasteView />,
@@ -63,7 +74,7 @@ export function App() {
     }
 
     return views[activeSection]
-  }, [activeSection, session])
+  }, [activeSection, productCreateRequestId, session])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -185,6 +196,25 @@ export function App() {
   const metadata = sectionMetadata[activeSection]
   const isPrimaryActionDisabled =
     activeSection === 'products' && !session.organization.capabilities.canWriteProducts
+  const primaryActionDisabledReason =
+    activeSection === 'products' && isPrimaryActionDisabled
+      ? 'Requiere permisos de owner, admin u operator.'
+      : undefined
+
+  function handlePrimaryAction() {
+    if (!session) {
+      return
+    }
+
+    if (activeSection === 'products') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setProductCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    window.alert(`${metadata.action}: flujo pendiente de implementación.`)
+  }
 
   return (
     <SystemShell
@@ -193,10 +223,11 @@ export function App() {
       activeOrganizationName={session.organization.name}
       canManageMembers={canManageMembers}
       isPrimaryActionDisabled={isPrimaryActionDisabled}
+      primaryActionDisabledReason={primaryActionDisabledReason}
       isSwitchingOrganization={isSwitchingOrganization}
       onLogout={handleLogout}
       onNavigate={setActiveSection}
-      onPrimaryAction={() => window.alert(`${metadata.action}: flujo pendiente de implementación.`)}
+      onPrimaryAction={handlePrimaryAction}
       onSwitchOrganization={(organizationId) => {
         void handleSwitchOrganization(organizationId)
       }}

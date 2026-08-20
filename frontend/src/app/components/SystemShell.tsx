@@ -49,6 +49,7 @@ type SystemShellProps = {
   title: string
   primaryAction: string
   isPrimaryActionDisabled?: boolean
+  primaryActionDisabledReason?: string
   children: ReactNode
   onNavigate: (section: AppSection) => void
   onLogout: () => void
@@ -69,6 +70,7 @@ export function SystemShell({
   title,
   primaryAction,
   isPrimaryActionDisabled = false,
+  primaryActionDisabledReason,
   children,
   onNavigate,
   onLogout,
@@ -142,7 +144,11 @@ export function SystemShell({
             <button aria-label="Cerrar sesión" className="icon-button" onClick={onLogout} type="button">
               <LogOut size={17} />
             </button>
-            <Button disabled={isPrimaryActionDisabled} onClick={onPrimaryAction}>
+            <Button
+              disabled={isPrimaryActionDisabled}
+              onClick={onPrimaryAction}
+              title={isPrimaryActionDisabled ? primaryActionDisabledReason : undefined}
+            >
               {primaryAction}
             </Button>
           </div>

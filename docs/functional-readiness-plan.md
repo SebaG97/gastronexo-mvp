@@ -7,6 +7,7 @@
 - [x] Épica 1 · Misión 1.1 — Sesiones seguras y perfil actual
 - [x] Épica 1 · Misión 1.2 — Autorización por roles aplicada en API
 - [x] Épica 1 · Misión 1.3 — Organización activa y gestión básica de miembros
+- [x] Épica 2 · Misión 2.1 — CRUD operativo de productos
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -231,3 +232,97 @@
 - Validación manual de regresión:
   - request: `DELETE /api/organization/members/:userId` con header `Content-Type: application/json` y body vacío;
   - resultado esperado/obtenido tras el ajuste: `400` con `{ "message": "Solicitud inválida." }`.
+
+## Misión 2.1 · Registro de ejecución
+
+### Decisiones tomadas
+
+- Se extendió `products.routes` manteniendo prefijo y autenticación JWT existentes (`/api/products`).
+- Todas las lecturas y escrituras se filtran por `organization_id` de la organización activa en sesión.
+- Se agregó validación con Zod para query params, UUID de `:id`, payloads de create/update y cambio de estado.
+- Se implementó paginación defensiva con `page >= 1` y `pageSize` acotado a `1..100`.
+- Se normaliza `sku` vacío a `null` para evitar colisiones innecesarias por string vacío en índice único.
+- Se mantiene estrategia de error seguro:
+  - `404` genérico para producto inexistente o fuera de la organización activa;
+  - `409` para SKU duplicado dentro de la misma organización;
+  - `403` para rol sin permiso de escritura.
+
+### Endpoints de productos (Misión 2.1)
+
+- `GET /api/products` (`owner|admin|operator|viewer`)
+  - Query opcional:
+    - `q`: búsqueda por `name` o `sku` (`ILIKE`).
+    - `status`: `active` | `inactive` | `all` (default `active`).
+    - `page`: entero >= 1.
+    - `pageSize`: entero 1..100.
+  - Respuesta: `{ products, pagination }` con `total`, `page`, `pageSize`, `totalPages`.
+- `GET /api/products/:id` (`owner|admin|operator|viewer`)
+  - Devuelve producto de organización activa o `404` genérico.
+- `POST /api/products` (`owner|admin|operator`)
+  - Alta de producto, con `409` en SKU duplicado de la misma organización.
+- `PATCH /api/products/:id` (`owner|admin|operator`)
+  - Actualiza `name`, `sku`, `unit`, `cost` (parcial); requiere al menos un campo.
+- `PATCH /api/products/:id/status` (`owner|admin|operator`)
+  - Actualiza `isActive` (`boolean`) para activar/inactivar sin borrado físico.
+
+### Frontend
+
+- `ProductsView` deja de ser placeholder y pasa a módulo operativo con:
+  - tabla compacta (`nombre`, `SKU`, `unidad`, `costo`, `estado`, `acciones`);
+  - búsqueda con debounce;
+  - filtro de estado `Todos/Activos/Inactivos`;
+  - paginación;
+  - estados de carga, vacío, error y éxito.
+- Se agregó formulario reutilizable para alta/edición con validación cliente:
+  - `name` obligatorio;
+  - `sku` opcional;
+  - `unit` obligatoria;
+  - `cost >= 0`.
+- Costo mostrado en formato guaraní para interfaz: `Gs.` + separador local + sin decimales.
+- La acción primaria del topbar en sección Productos abre alta para roles con `canWriteProducts`.
+- Para `viewer`, la acción primaria se mantiene visible/deshabilitada con texto de permiso requerido.
+- En filas de la tabla:
+  - `editar` y `activar/inactivar` solo para roles con escritura;
+  - `viewer` queda en solo lectura.
+
+### Validación de misión
+
+- Build backend: `cd backend && npm.cmd run build` ✅
+- Build frontend: `cd frontend && npm.cmd run build` ✅
+- Validaciones manuales objetivo de la misión:
+  - owner crea, edita e inactiva producto;
+  - búsqueda, filtro y paginación operativos;
+  - viewer lista y no puede escribir (UI bloqueada + API `403`);
+  - producto de otra organización retorna `404`;
+  - SKU repetido en misma organización retorna `409`.
+
+### Cierre de validación UI (real)
+
+- Entorno usado para validación visual:
+  - PostgreSQL por `docker compose` activo (`postgres:16` en `5432`).
+  - Backend esperado en `http://localhost:3000` con `PORT=3000` y `FRONTEND_ORIGIN=http://localhost:5173`.
+  - Frontend en `http://localhost:5173` con `VITE_API_URL=http://localhost:3000`.
+- Ajuste de configuración detectado durante la prueba:
+  - `3000` estaba ocupado por un proceso previo de API (error `EADDRINUSE`).
+  - Se finalizó el proceso ocupando `3000` y se reinició backend para tomar el `.env` correcto.
+  - No se requirieron cambios de código para resolverlo.
+- Resultado de prueba UI con rol `owner`:
+  - login exitoso;
+  - acceso a módulo Productos;
+  - alta desde acción primaria (`Nuevo producto`) exitosa;
+  - edición por fila exitosa;
+  - inactivación por fila con confirmación exitosa;
+  - búsqueda por nombre/SKU funcional;
+  - filtro por estado (`Activos`/`Inactivos`) funcional;
+  - paginación funcional (lista activa en múltiples páginas).
+- Resultado de prueba UI/API con rol `viewer`:
+  - login exitoso;
+  - navegación de `Miembros` oculta para viewer;
+  - acción primaria de Productos visible pero deshabilitada;
+  - filas de Productos en modo `Solo lectura` (sin botones de escritura);
+  - intento de escritura por API (`POST /api/products`) responde `403` con mensaje de permiso.
+
+### Fuera de alcance (se mantiene)
+
+- No se implementó borrado físico de productos.
+- No se agregaron categorías de productos (Misión 2.2).

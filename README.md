@@ -206,6 +206,100 @@ Esperado: `401` con mensaje genérico de sesión inválida/expirada.
 	- No se puede revocar ni degradar al último `owner` (`409`).
 	- Un `owner` no puede revocar su propia membresía por estos endpoints.
 
+### Probar Misión 2.1 (CRUD operativo de productos)
+
+Con token de un rol con escritura (`owner|admin|operator`):
+
+1. Crear producto:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{
+	    "name": "Harina 000",
+	    "sku": "HAR-000",
+	    "unit": "kg",
+	    "cost": 12000
+	  }'
+	```
+
+2. Listar con filtros y paginación:
+
+	```bash
+	curl -i "http://localhost:3000/api/products?status=all&page=1&pageSize=10&q=har" \
+	  -H "Authorization: Bearer $TOKEN_A"
+	```
+
+3. Obtener ID y consultar detalle:
+
+	```bash
+	PRODUCT_ID=$(curl -s "http://localhost:3000/api/products?status=all&page=1&pageSize=10&q=HAR-000" \
+	  -H "Authorization: Bearer $TOKEN_A" | jq -r '.products[0].id')
+
+	curl -i "http://localhost:3000/api/products/$PRODUCT_ID" \
+	  -H "Authorization: Bearer $TOKEN_A"
+	```
+
+4. Editar producto:
+
+	```bash
+	curl -i -X PATCH "http://localhost:3000/api/products/$PRODUCT_ID" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{
+	    "name": "Harina 000 Premium",
+	    "cost": 13000
+	  }'
+	```
+
+5. Inactivar producto:
+
+	```bash
+	curl -i -X PATCH "http://localhost:3000/api/products/$PRODUCT_ID/status" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"isActive": false}'
+	```
+
+6. Validar bloqueo de escritura para `viewer`:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_B_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"No permitido","unit":"unit","cost":1000}'
+	```
+
+	Esperado: `403`.
+
+7. Validar SKU duplicado en misma organización:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Harina Duplicada","sku":"HAR-000","unit":"kg","cost":12000}'
+	```
+
+	Esperado: `409`.
+
+8. Validar aislamiento entre organizaciones (404 en detalle ajeno):
+
+	```bash
+	# TOKEN_B pertenece a organización B (no A)
+	curl -i "http://localhost:3000/api/products/$PRODUCT_ID" \
+	  -H "Authorization: Bearer $TOKEN_B"
+	```
+
+	Esperado: `404` genérico.
+
+9. Verificación UI:
+
+	- En sección Productos, acción primaria "Nuevo producto" abre formulario para `owner|admin|operator`.
+	- Para `viewer`, acción primaria visible pero deshabilitada con motivo de permisos.
+	- Tabla permite editar y activar/inactivar solo para roles con escritura.
+
 Para simular base no disponible sin apagar la API:
 
 ```bash
