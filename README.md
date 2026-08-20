@@ -50,6 +50,34 @@ La documentación de diseño y alcance está disponible en `docs/`.
 	npm run dev
 	```
 
+### Verificar `health` y `ready` localmente
+
+Con la API levantada en `http://localhost:3000`:
+
+```bash
+curl -i http://localhost:3000/health
+curl -i http://localhost:3000/ready
+```
+
+Esperado con PostgreSQL activo:
+
+- `/health` => `200` con `{"status":"ok"}`
+- `/ready` => `200` con `{"status":"ready"}`
+
+Para simular base no disponible sin apagar la API:
+
+```bash
+docker compose stop postgres
+curl -i http://localhost:3000/health
+curl -i http://localhost:3000/ready
+docker compose up -d postgres
+```
+
+Esperado con PostgreSQL detenido:
+
+- `/health` => `200`
+- `/ready` => `503` con `{"status":"not_ready"}`
+
 ### Detener y reiniciar PostgreSQL
 
 - Detener:

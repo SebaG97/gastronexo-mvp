@@ -3,6 +3,7 @@ import jwt from '@fastify/jwt'
 import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { config } from './config.js'
+import { pool } from './db/pool.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
 
@@ -37,6 +38,15 @@ export function buildApp() {
   })
 
   app.get('/health', async () => ({ status: 'ok' }))
+  app.get('/ready', async (_request, reply) => {
+    try {
+      await pool.query('SELECT $1::int AS ready', [1])
+      return reply.code(200).send({ status: 'ready' })
+    } catch {
+      return reply.code(503).send({ status: 'not_ready' })
+    }
+  })
+
   app.register(authRoutes, { prefix: '/api/auth' })
   app.register(productsRoutes, { prefix: '/api/products' })
 
