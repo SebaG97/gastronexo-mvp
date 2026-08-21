@@ -386,6 +386,122 @@ Con token de un rol con escritura (`owner|admin|operator`):
 
 Unidades permitidas por API: `unit`, `kg`, `g`, `l`, `ml`, `box`, `portion`.
 
+### Probar Misión 3.1 (tipos de producto, depósitos e inventario base)
+
+1. Ejecutar migraciones y builds solicitados:
+
+	```bash
+	cd backend && npm.cmd run db:migrate
+	cd backend && npm.cmd run build
+	cd frontend && npm.cmd run build
+	```
+
+2. Verificar producto existente como `raw_material` (post-migración):
+
+	```bash
+	curl -i "http://localhost:3000/api/products?status=all&page=1&pageSize=20" \
+	  -H "Authorization: Bearer $TOKEN_A"
+	```
+
+	Esperado: cada producto incluye `productType`, y los previos aparecen como `raw_material`.
+
+3. Crear producto `raw_material` y `finished_product`:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Tomate fresco","unit":"kg","productType":"raw_material","cost":8000}'
+
+	curl -i -X POST http://localhost:3000/api/products \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Salsa lista","unit":"portion","productType":"finished_product","cost":12000}'
+	```
+
+4. Crear depósitos en dos organizaciones y validar aislamiento:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/warehouses \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Depósito A"}'
+
+	curl -i -X POST http://localhost:3000/api/warehouses \
+	  -H "Authorization: Bearer $TOKEN_B" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Depósito B"}'
+	```
+
+5. Ajustar stock positivo, cero y negativo:
+
+	```bash
+	WAREHOUSE_A_ID=$(curl -s "http://localhost:3000/api/warehouses?status=active" \
+	  -H "Authorization: Bearer $TOKEN_A" | jq -r '.warehouses[0].id')
+
+	PRODUCT_A_ID=$(curl -s "http://localhost:3000/api/products?status=active&page=1&pageSize=20" \
+	  -H "Authorization: Bearer $TOKEN_A" | jq -r '.products[0].id')
+
+	curl -i -X POST http://localhost:3000/api/inventory/adjustments \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"warehouseId\":\"$WAREHOUSE_A_ID\",\"productId\":\"$PRODUCT_A_ID\",\"newQuantity\":10,\"reason\":\"conteo inicial\"}"
+
+	curl -i -X POST http://localhost:3000/api/inventory/adjustments \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"warehouseId\":\"$WAREHOUSE_A_ID\",\"productId\":\"$PRODUCT_A_ID\",\"newQuantity\":0,\"reason\":\"ajuste a cero\"}"
+
+	curl -i -X POST http://localhost:3000/api/inventory/adjustments \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"warehouseId\":\"$WAREHOUSE_A_ID\",\"productId\":\"$PRODUCT_A_ID\",\"newQuantity\":-1,\"reason\":\"inválido\"}"
+	```
+
+	Esperado: el tercer request devuelve `400`.
+
+6. Verificar historial y delta:
+
+	```bash
+	curl -i "http://localhost:3000/api/inventory/adjustments?warehouseId=$WAREHOUSE_A_ID&page=1&pageSize=20" \
+	  -H "Authorization: Bearer $TOKEN_A"
+	```
+
+7. Intentar ajustar con depósito/producto de otra organización (`404` genérico):
+
+	```bash
+	WAREHOUSE_B_ID=$(curl -s "http://localhost:3000/api/warehouses?status=active" \
+	  -H "Authorization: Bearer $TOKEN_B" | jq -r '.warehouses[0].id')
+
+	curl -i -X POST http://localhost:3000/api/inventory/adjustments \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"warehouseId\":\"$WAREHOUSE_B_ID\",\"productId\":\"$PRODUCT_A_ID\",\"newQuantity\":1,\"reason\":\"cruce inválido\"}"
+	```
+
+8. Intentar inactivar depósito con stock positivo (`409`):
+
+	```bash
+	curl -i -X PATCH "http://localhost:3000/api/warehouses/$WAREHOUSE_A_ID/status" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"isActive":false}'
+	```
+
+9. Verificar `viewer` en solo lectura:
+
+	```bash
+	curl -i "http://localhost:3000/api/inventory?warehouseId=$WAREHOUSE_A_ID&page=1&pageSize=10" \
+	  -H "Authorization: Bearer $TOKEN_B_A"
+
+	curl -i -X POST http://localhost:3000/api/inventory/adjustments \
+	  -H "Authorization: Bearer $TOKEN_B_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"warehouseId\":\"$WAREHOUSE_A_ID\",\"productId\":\"$PRODUCT_A_ID\",\"newQuantity\":2,\"reason\":\"no permitido\"}"
+	```
+
+	Esperado: lectura OK y escritura `403`.
+
 Para simular base no disponible sin apagar la API:
 
 ```bash

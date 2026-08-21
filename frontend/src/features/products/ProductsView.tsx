@@ -14,6 +14,7 @@ import {
 } from '../../shared/lib/auth-api'
 import { ProductCategoriesManager } from './ProductCategoriesManager'
 import { ProductForm, type ProductFormValues } from './ProductForm'
+import { productTypeLabelByKey } from './product-types'
 import { productUnitLabelByKey } from './product-units'
 
 const PAGE_SIZE = 10
@@ -43,6 +44,7 @@ function toFormValues(product: Product): ProductFormValues {
     name: product.name,
     sku: product.sku ?? '',
     unit: product.unit,
+    productType: product.productType,
     cost: String(product.cost),
     categoryId: product.categoryId ?? '',
   }
@@ -275,6 +277,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
               <tr>
                 <th>Nombre</th>
                 <th>SKU</th>
+                <th>Tipo</th>
                 <th>Categoría</th>
                 <th>Unidad</th>
                 <th>Costo</th>
@@ -287,6 +290,11 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                 <tr key={product.id}>
                   <td>{product.name}</td>
                   <td>{product.sku ?? '—'}</td>
+                  <td>
+                    <StatusBadge tone={product.productType === 'raw_material' ? 'warning' : 'success'}>
+                      {productTypeLabelByKey[product.productType]}
+                    </StatusBadge>
+                  </td>
                   <td>{product.categoryName ?? 'Sin categoría'}</td>
                   <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
                   <td>{formatCost(product.cost)}</td>

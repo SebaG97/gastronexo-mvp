@@ -5,6 +5,8 @@ import { ZodError } from 'zod'
 import { config } from './config.js'
 import { pool } from './db/pool.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
+import { inventoryRoutes } from './modules/inventory/inventory.routes.js'
+import { warehousesRoutes } from './modules/inventory/warehouses.routes.js'
 import { organizationMembersRoutes } from './modules/organization/organization-members.routes.js'
 import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
@@ -63,6 +65,8 @@ export function buildApp() {
   app.register(organizationMembersRoutes, { prefix: '/api/organization' })
   app.register(productCategoriesRoutes, { prefix: '/api/product-categories' })
   app.register(productsRoutes, { prefix: '/api/products' })
+  app.register(warehousesRoutes, { prefix: '/api/warehouses' })
+  app.register(inventoryRoutes, { prefix: '/api/inventory' })
 
   return app
 }

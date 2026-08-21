@@ -4,8 +4,10 @@ import { pool } from '../../db/pool.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 
 const allowedProductUnits = ['unit', 'kg', 'g', 'l', 'ml', 'box', 'portion'] as const
+const allowedProductTypes = ['raw_material', 'finished_product'] as const
 
 const productUnitSchema = z.enum(allowedProductUnits)
+const productTypeSchema = z.enum(allowedProductTypes)
 
 const listProductsQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
@@ -22,6 +24,7 @@ const createProductSchema = z.object({
   name: z.string().trim().min(2).max(160),
   sku: z.string().trim().min(1).max(80).optional(),
   unit: productUnitSchema.default('unit'),
+  productType: productTypeSchema.default('raw_material'),
   cost: z.coerce.number().min(0).default(0),
   categoryId: z.string().uuid().nullable().optional(),
 })
@@ -31,6 +34,7 @@ const updateProductSchema = z
     name: z.string().trim().min(2).max(160).optional(),
     sku: z.string().trim().max(80).nullable().optional(),
     unit: productUnitSchema.optional(),
+    productType: productTypeSchema.optional(),
     cost: z.coerce.number().min(0).optional(),
     categoryId: z.string().uuid().nullable().optional(),
   })
@@ -143,6 +147,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.name,
            p.sku,
            p.unit,
+           p.product_type AS "productType",
            p.cost,
            p.category_id AS "categoryId",
            c.name AS "categoryName",
@@ -186,6 +191,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.name,
            p.sku,
            p.unit,
+           p.product_type AS "productType",
            p.cost,
            p.category_id AS "categoryId",
            c.name AS "categoryName",
@@ -232,18 +238,27 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
 
         const sku = normalizeSku(input.sku)
         const result = await client.query(
-          `INSERT INTO products (organization_id, name, sku, unit, cost, category_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO products (organization_id, name, sku, unit, product_type, cost, category_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING
              id,
              name,
              sku,
              unit,
+             product_type AS "productType",
              cost,
              category_id AS "categoryId",
              is_active AS "isActive",
              created_at AS "createdAt"`,
-          [organizationId, input.name, sku, input.unit, input.cost, input.categoryId ?? null],
+          [
+            organizationId,
+            input.name,
+            sku,
+            input.unit,
+            input.productType,
+            input.cost,
+            input.categoryId ?? null,
+          ],
         )
 
         const product = result.rows[0]
@@ -292,6 +307,11 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         assignments.push(`unit = $${values.length}`)
       }
 
+      if (input.productType !== undefined) {
+        values.push(input.productType)
+        assignments.push(`product_type = $${values.length}`)
+      }
+
       if (input.cost !== undefined) {
         values.push(input.cost)
         assignments.push(`cost = $${values.length}`)
@@ -327,6 +347,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
              name,
              sku,
              unit,
+             product_type AS "productType",
              cost,
              category_id AS "categoryId",
              is_active AS "isActive",
@@ -378,6 +399,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            name,
            sku,
            unit,
+           product_type AS "productType",
            cost,
            category_id AS "categoryId",
            is_active AS "isActive",

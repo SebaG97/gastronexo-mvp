@@ -43,6 +43,7 @@ export function App() {
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [productCreateRequestId, setProductCreateRequestId] = useState(0)
+  const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
 
   const canManageMembers =
     session?.organization.role === 'owner' || session?.organization.role === 'admin'
@@ -69,12 +70,20 @@ export function App() {
       production: <ProductionView />,
       waste: <WasteView />,
       sales: <SalesView />,
-      stock: <StockView />,
+      stock: session ? (
+        <StockView
+          token={session.token}
+          canWriteInventory={canWriteProducts}
+          createAdjustmentRequestId={stockAdjustRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
       members: session ? <MembersView token={session.token} /> : <DashboardView />,
     }
 
     return views[activeSection]
-  }, [activeSection, productCreateRequestId, session])
+  }, [activeSection, productCreateRequestId, session, stockAdjustRequestId])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -195,9 +204,10 @@ export function App() {
 
   const metadata = sectionMetadata[activeSection]
   const isPrimaryActionDisabled =
-    activeSection === 'products' && !session.organization.capabilities.canWriteProducts
+    (activeSection === 'products' || activeSection === 'stock') &&
+    !session.organization.capabilities.canWriteProducts
   const primaryActionDisabledReason =
-    activeSection === 'products' && isPrimaryActionDisabled
+    (activeSection === 'products' || activeSection === 'stock') && isPrimaryActionDisabled
       ? 'Requiere permisos de owner, admin u operator.'
       : undefined
 
@@ -209,6 +219,13 @@ export function App() {
     if (activeSection === 'products') {
       if (session.organization.capabilities.canWriteProducts) {
         setProductCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'stock') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setStockAdjustRequestId((current) => current + 1)
       }
       return
     }

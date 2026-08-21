@@ -9,6 +9,7 @@
 - [x] Épica 1 · Misión 1.3 — Organización activa y gestión básica de miembros
 - [x] Épica 2 · Misión 2.1 — CRUD operativo de productos
 - [x] Épica 2 · Misión 2.2 — Categorías y unidades de medida
+- [x] Épica 3 · Misión 3.1 — Tipos de producto, depósitos e inventario base
 
 ## Misión 0.1 · Registro de ejecución
 
@@ -383,3 +384,64 @@
   - viewer en solo lectura;
   - feedback de carga, error y éxito.
 - Tras cambios en categorías se refrescan listado de productos y categorías activas del formulario.
+
+## Misión 3.1 · Registro de ejecución
+
+### Decisiones tomadas
+
+- `products` se extendió con `product_type` (`raw_material` | `finished_product`) con default `raw_material` y no nulo para mantener compatibilidad con datos existentes.
+- Se agregó modelo base de inventario por organización:
+  - `warehouses` (depósitos por organización);
+  - `inventory_balances` (saldo actual por `warehouse + product`);
+  - `inventory_adjustments` (auditoría de ajustes manuales con motivo, usuario y delta).
+- Se prohibió stock negativo en validación de API y en constraints de base de datos.
+
+### Migración aplicada
+
+- Nueva migración incremental: `backend/src/db/migrations/003_inventory_foundation.sql`.
+- Cambios incluidos:
+  - `products.product_type` con restricción de dominio y default `raw_material`.
+  - `warehouses` con unicidad por organización case-insensitive (`organization_id + lower(name)`).
+  - `inventory_balances` con `quantity >= 0`, unicidad por `warehouse_id + product_id`, FKs e índices por organización/depósito/producto.
+  - `inventory_adjustments` con `previous_quantity`, `new_quantity`, `delta`, `reason`, `created_by_user_id`, `created_at` e índices de consulta.
+
+### Endpoints incorporados
+
+- Productos (`/api/products`): `GET/POST/PATCH` y `PATCH /:id/status` exponen y aceptan `productType`.
+- Depósitos (`/api/warehouses`):
+  - `GET ?status=active|inactive|all`
+  - `POST`
+  - `PATCH /:id`
+  - `PATCH /:id/status`
+  - Regla: no se puede inactivar depósito con inventario positivo (`409`).
+- Inventario (`/api/inventory`):
+  - `GET ?warehouseId=&productType=&q=&page=&pageSize=`.
+  - Si el depósito filtrado está activo, incluye productos sin balance con `quantity = 0`.
+- Ajustes (`/api/inventory/adjustments`):
+  - `POST` con `warehouseId`, `productId`, `newQuantity`, `reason` (obligatorio).
+  - `GET` con filtros `warehouseId`, `productId`, `from`, `to`, paginación.
+
+### Permisos y seguridad
+
+- Lectura (`warehouses`, `inventory`, `adjustments`): `owner|admin|operator|viewer`.
+- Escritura (crear/editar/inactivar depósito y ajustar inventario): `owner|admin|operator`.
+- `viewer` recibe `403` en escritura.
+- Validación de pertenencia de producto/depósito a organización activa con respuesta segura (`404`) para recursos fuera de alcance.
+- Ajustes de stock ejecutados en transacción con bloqueo (`FOR UPDATE`) para evitar inconsistencias por concurrencia.
+
+### Frontend
+
+- Productos:
+  - formulario con selector obligatorio de tipo de producto;
+  - tabla con etiqueta compacta de tipo (`Materia prima` / `Producto elaborado`).
+- Stock:
+  - reemplazo del placeholder por módulo funcional;
+  - selector y gestión compacta de depósitos;
+  - tabla de inventario con filtros, búsqueda, paginación y estados de carga/vacío/error;
+  - formulario de ajuste con motivo obligatorio, previsualización de cantidad anterior y delta;
+  - historial compacto de ajustes con filtros de producto/fecha.
+
+### Limitaciones transitorias (fuera de alcance)
+
+- No se implementaron movimientos inmutables generales ni integración automática con compras/producción/ventas/mermas.
+- No se implementaron reservas, lotes, vencimientos, mínimos/máximos ni alertas.

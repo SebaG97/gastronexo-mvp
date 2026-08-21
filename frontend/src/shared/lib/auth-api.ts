@@ -81,6 +81,7 @@ export type Product = {
   name: string
   sku: string | null
   unit: ProductUnit
+  productType: ProductType
   cost: number
   categoryId: string | null
   categoryName: string | null
@@ -89,6 +90,7 @@ export type Product = {
 }
 
 export type ProductUnit = 'unit' | 'kg' | 'g' | 'l' | 'ml' | 'box' | 'portion'
+export type ProductType = 'raw_material' | 'finished_product'
 
 export type ProductCategory = {
   id: string
@@ -126,8 +128,92 @@ export type ProductMutationInput = {
   name: string
   sku?: string
   unit: ProductUnit
+  productType: ProductType
   cost: number
   categoryId?: string | null
+}
+
+export type WarehousesStatusFilter = 'active' | 'inactive' | 'all'
+
+export type Warehouse = {
+  id: string
+  name: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type WarehousesListResponse = {
+  warehouses: Warehouse[]
+}
+
+export type InventoryBalance = {
+  productId: string
+  productName: string
+  sku: string | null
+  productType: ProductType
+  unit: ProductUnit
+  cost: number
+  categoryId: string | null
+  categoryName: string | null
+  warehouseId: string
+  warehouseName: string
+  quantity: string
+  updatedAt: string | null
+}
+
+export type InventoryListRequest = {
+  warehouseId?: string
+  productType?: ProductType
+  q?: string
+  page?: number
+  pageSize?: number
+}
+
+export type InventoryListResponse = {
+  balances: InventoryBalance[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type InventoryAdjustment = {
+  id: string
+  warehouseId: string
+  warehouseName: string
+  productId: string
+  productName: string
+  productType: ProductType
+  unit: ProductUnit
+  previousQuantity: string
+  newQuantity: string
+  delta: string
+  reason: string
+  createdByUserId: string
+  createdByUserName: string
+  createdAt: string
+}
+
+export type InventoryAdjustmentsListRequest = {
+  warehouseId?: string
+  productId?: string
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+export type InventoryAdjustmentsListResponse = {
+  adjustments: InventoryAdjustment[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
 }
 
 export class ApiError extends Error {
@@ -361,4 +447,127 @@ export async function updateProductCategoryStatus(categoryId: string, isActive: 
     },
     token,
   )
+}
+
+export async function getWarehouses(status: WarehousesStatusFilter, token: string) {
+  const searchParams = new URLSearchParams({ status })
+
+  return apiRequest<WarehousesListResponse>(`/api/warehouses?${searchParams.toString()}`, { method: 'GET' }, token)
+}
+
+export async function createWarehouse(input: { name: string }, token: string) {
+  return apiRequest<{ warehouse: Warehouse }>(
+    '/api/warehouses',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateWarehouse(warehouseId: string, input: { name: string }, token: string) {
+  return apiRequest<{ warehouse: Warehouse }>(
+    `/api/warehouses/${warehouseId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateWarehouseStatus(warehouseId: string, isActive: boolean, token: string) {
+  return apiRequest<{ warehouse: Warehouse }>(
+    `/api/warehouses/${warehouseId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getInventoryBalances(query: InventoryListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.warehouseId) {
+    searchParams.set('warehouseId', query.warehouseId)
+  }
+  if (query.productType) {
+    searchParams.set('productType', query.productType)
+  }
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<InventoryListResponse>(`/api/inventory${suffix}`, { method: 'GET' }, token)
+}
+
+export async function createInventoryAdjustment(
+  input: { warehouseId: string; productId: string; newQuantity: number; reason: string },
+  token: string,
+) {
+  return apiRequest<{
+    balance: {
+      id: string
+      organizationId: string
+      warehouseId: string
+      productId: string
+      quantity: string
+      updatedAt: string
+    }
+    adjustment: {
+      id: string
+      organizationId: string
+      warehouseId: string
+      productId: string
+      previousQuantity: string
+      newQuantity: string
+      delta: string
+      reason: string
+      createdByUserId: string
+      createdAt: string
+    }
+  }>(
+    '/api/inventory/adjustments',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function getInventoryAdjustments(query: InventoryAdjustmentsListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.warehouseId) {
+    searchParams.set('warehouseId', query.warehouseId)
+  }
+  if (query.productId) {
+    searchParams.set('productId', query.productId)
+  }
+  if (query.from) {
+    searchParams.set('from', query.from)
+  }
+  if (query.to) {
+    searchParams.set('to', query.to)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<InventoryAdjustmentsListResponse>(`/api/inventory/adjustments${suffix}`, { method: 'GET' }, token)
 }

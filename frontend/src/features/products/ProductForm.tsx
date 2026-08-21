@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../../shared/components'
-import type { ProductCategory, ProductUnit } from '../../shared/lib/auth-api'
+import type { ProductCategory, ProductType, ProductUnit } from '../../shared/lib/auth-api'
+import { productTypeCatalog } from './product-types'
 import { productUnitCatalog } from './product-units'
 
 export type ProductFormValues = {
   name: string
   sku: string
   unit: ProductUnit
+  productType: ProductType
   cost: string
   categoryId: string
 }
@@ -15,6 +17,7 @@ type ProductFormSubmitPayload = {
   name: string
   sku?: string
   unit: ProductUnit
+  productType: ProductType
   cost: number
   categoryId: string | null
 }
@@ -32,6 +35,7 @@ const defaultValues: ProductFormValues = {
   name: '',
   sku: '',
   unit: 'unit',
+  productType: 'raw_material',
   cost: '0',
   categoryId: '',
 }
@@ -80,6 +84,10 @@ export function ProductForm({
       nextErrors.unit = 'Seleccioná una unidad válida.'
     }
 
+    if (!productTypeCatalog.some((entry) => entry.key === values.productType)) {
+      nextErrors.productType = 'Seleccioná un tipo de producto válido.'
+    }
+
     if (!Number.isFinite(parsedCost) || parsedCost < 0) {
       nextErrors.cost = 'El costo debe ser mayor o igual a 0.'
     }
@@ -98,6 +106,7 @@ export function ProductForm({
       name: normalizedName,
       sku: normalizedSku || undefined,
       unit: values.unit,
+      productType: values.productType,
       cost: parsedCost,
       categoryId: hasCategorySelection ? values.categoryId : null,
     }
@@ -155,6 +164,24 @@ export function ProductForm({
           ))}
         </select>
         {errors.unit ? <span className="form-error">{errors.unit}</span> : null}
+      </label>
+
+      <label className="field">
+        Tipo de producto
+        <select
+          className="select-input"
+          value={values.productType}
+          onChange={(event) => setField('productType', event.target.value as ProductType)}
+          disabled={isSubmitting}
+          required
+        >
+          {productTypeCatalog.map((entry) => (
+            <option key={entry.key} value={entry.key}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+        {errors.productType ? <span className="form-error">{errors.productType}</span> : null}
       </label>
 
       <label className="field">
