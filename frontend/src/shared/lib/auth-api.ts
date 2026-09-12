@@ -110,6 +110,7 @@ export type ProductsStatusFilter = 'active' | 'inactive' | 'all'
 export type ProductsListRequest = {
   q?: string
   status?: ProductsStatusFilter
+  productType?: ProductType
   page?: number
   pageSize?: number
 }
@@ -192,6 +193,8 @@ export type InventoryAdjustment = {
   newQuantity: string
   delta: string
   reason: string
+  sourceType: 'manual' | 'purchase'
+  purchaseOrderId: string | null
   createdByUserId: string
   createdByUserName: string
   createdAt: string
@@ -214,6 +217,112 @@ export type InventoryAdjustmentsListResponse = {
     pageSize: number
     totalPages: number
   }
+}
+
+export type Supplier = {
+  id: string
+  name: string
+  taxId: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type SuppliersStatusFilter = 'active' | 'inactive' | 'all'
+
+export type SuppliersListRequest = {
+  q?: string
+  status?: SuppliersStatusFilter
+  page?: number
+  pageSize?: number
+}
+
+export type SuppliersListResponse = {
+  suppliers: Supplier[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type SupplierMutationInput = {
+  name: string
+  taxId?: string | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  notes?: string | null
+}
+
+export type PurchaseItem = {
+  id: string
+  productId: string
+  productName: string
+  unit: ProductUnit
+  quantity: string
+  unitCost: string
+  lineTotal: string
+}
+
+export type Purchase = {
+  id: string
+  supplierId: string
+  supplierName: string
+  warehouseId: string
+  warehouseName: string
+  invoiceNumber: string
+  purchaseDate: string
+  paymentMethod: string
+  notes: string | null
+  totalAmount: string
+  createdByUserId: string
+  createdByUserName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type PurchaseDetail = Purchase & {
+  items: PurchaseItem[]
+}
+
+export type PurchasesListRequest = {
+  q?: string
+  supplierId?: string
+  warehouseId?: string
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+export type PurchasesListResponse = {
+  purchases: Purchase[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type PurchaseMutationInput = {
+  supplierId: string
+  warehouseId: string
+  invoiceNumber: string
+  purchaseDate: string
+  paymentMethod: string
+  notes?: string | null
+  items: Array<{
+    productId: string
+    quantity: number
+    unitCost: number
+  }>
 }
 
 export class ApiError extends Error {
@@ -353,6 +462,9 @@ export async function getProducts(query: ProductsListRequest, token: string) {
   }
   if (query.status) {
     searchParams.set('status', query.status)
+  }
+  if (query.productType) {
+    searchParams.set('productType', query.productType)
   }
   if (query.page !== undefined) {
     searchParams.set('page', String(query.page))
@@ -570,4 +682,114 @@ export async function getInventoryAdjustments(query: InventoryAdjustmentsListReq
 
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
   return apiRequest<InventoryAdjustmentsListResponse>(`/api/inventory/adjustments${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getSuppliers(query: SuppliersListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<SuppliersListResponse>(`/api/suppliers${suffix}`, { method: 'GET' }, token)
+}
+
+export async function createSupplier(input: SupplierMutationInput, token: string) {
+  return apiRequest<{ supplier: Supplier }>(
+    '/api/suppliers',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateSupplier(
+  supplierId: string,
+  input: Partial<SupplierMutationInput>,
+  token: string,
+) {
+  return apiRequest<{ supplier: Supplier }>(
+    `/api/suppliers/${supplierId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateSupplierStatus(supplierId: string, isActive: boolean, token: string) {
+  return apiRequest<{ supplier: Supplier }>(
+    `/api/suppliers/${supplierId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getPurchases(query: PurchasesListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.supplierId) {
+    searchParams.set('supplierId', query.supplierId)
+  }
+  if (query.warehouseId) {
+    searchParams.set('warehouseId', query.warehouseId)
+  }
+  if (query.from) {
+    searchParams.set('from', query.from)
+  }
+  if (query.to) {
+    searchParams.set('to', query.to)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<PurchasesListResponse>(`/api/purchases${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getPurchaseById(purchaseId: string, token: string) {
+  return apiRequest<{ purchase: PurchaseDetail }>(`/api/purchases/${purchaseId}`, { method: 'GET' }, token)
+}
+
+export async function createPurchase(input: PurchaseMutationInput, token: string) {
+  return apiRequest<{
+    purchase: PurchaseDetail
+    stockChanges: Array<{
+      productId: string
+      previousQuantity: string
+      newQuantity: string
+      delta: string
+      resultingCost: string
+    }>
+  }>(
+    '/api/purchases',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
 }

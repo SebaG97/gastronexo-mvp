@@ -1,5 +1,33 @@
 # Functional Readiness Plan
 
+## Mision 4.1 - Proveedores y compras operativas
+
+### Alcance implementado
+
+- Proveedores: listado con busqueda, alta, edicion, activacion e inactivacion sin borrado fisico.
+- Compras: listado, detalle y registro con proveedor, deposito, fecha, factura/referencia, metodo de pago, notas e items multiples.
+- Inventario: cada compra incrementa stock, registra movimiento en `inventory_adjustments` con `source_type = 'purchase'` y `purchase_order_id`, y recalcula costo promedio ponderado.
+- Permisos: `owner`, `admin` y `operator` con lectura/escritura; `viewer` en solo lectura.
+
+### Decisiones tomadas
+
+- Se reutiliza `purchase_orders` como compra operativa del MVP.
+- Se extiende `inventory_adjustments` para trazabilidad de compras, evitando un modelo paralelo de movimientos en esta etapa.
+- `GET /api/products` acepta `productType` para que compras consuma materias primas activas sin cargar todo el catalogo.
+
+### Validaciones ejecutadas
+
+- `cd backend && npm.cmd run build`: exitoso.
+- `cd frontend && npm.cmd run build`: exitoso.
+- `cd backend && npm.cmd run db:migrate`: bloqueado por entorno. En sandbox fallo por `spawn EPERM`; fuera de sandbox ejecuto `tsx`, pero PostgreSQL rechazo conexion en `localhost:5432`.
+- `docker compose ps`: bloqueado porque Docker Desktop no esta disponible (`dockerDesktopLinuxEngine` inexistente).
+
+### Estado y pendientes
+
+- Codigo y documentacion: implementados.
+- Validacion con PostgreSQL real y flujo manual end-to-end: pendiente hasta levantar Docker Desktop/PostgreSQL local.
+- Pendiente ejecutar el flujo manual completo: crear proveedor, registrar compra de 2 items, verificar compra, stock, movimiento, costo promedio, proveedor inactivo, producto no materia prima y permisos `viewer`.
+
 ## Estado de misiones
 
 - [x] Épica 0 · Misión 0.1 — Entorno PostgreSQL local reproducible

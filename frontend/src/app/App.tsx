@@ -43,6 +43,7 @@ export function App() {
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [productCreateRequestId, setProductCreateRequestId] = useState(0)
+  const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
 
   const canManageMembers =
@@ -66,7 +67,15 @@ export function App() {
       ) : (
         <DashboardView />
       ),
-      purchases: <PurchasesView />,
+      purchases: session ? (
+        <PurchasesView
+          token={session.token}
+          canWritePurchases={canWriteProducts}
+          createRequestId={purchaseCreateRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
       production: <ProductionView />,
       waste: <WasteView />,
       sales: <SalesView />,
@@ -83,7 +92,7 @@ export function App() {
     }
 
     return views[activeSection]
-  }, [activeSection, productCreateRequestId, session, stockAdjustRequestId])
+  }, [activeSection, productCreateRequestId, purchaseCreateRequestId, session, stockAdjustRequestId])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -204,10 +213,10 @@ export function App() {
 
   const metadata = sectionMetadata[activeSection]
   const isPrimaryActionDisabled =
-    (activeSection === 'products' || activeSection === 'stock') &&
+    (activeSection === 'products' || activeSection === 'purchases' || activeSection === 'stock') &&
     !session.organization.capabilities.canWriteProducts
   const primaryActionDisabledReason =
-    (activeSection === 'products' || activeSection === 'stock') && isPrimaryActionDisabled
+    (activeSection === 'products' || activeSection === 'purchases' || activeSection === 'stock') && isPrimaryActionDisabled
       ? 'Requiere permisos de owner, admin u operator.'
       : undefined
 
@@ -219,6 +228,13 @@ export function App() {
     if (activeSection === 'products') {
       if (session.organization.capabilities.canWriteProducts) {
         setProductCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'purchases') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setPurchaseCreateRequestId((current) => current + 1)
       }
       return
     }

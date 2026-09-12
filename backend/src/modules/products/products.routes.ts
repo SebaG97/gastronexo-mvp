@@ -12,6 +12,7 @@ const productTypeSchema = z.enum(allowedProductTypes)
 const listProductsQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   status: z.enum(['active', 'inactive', 'all']).default('active'),
+  productType: productTypeSchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
@@ -116,6 +117,11 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         whereClauses.push('is_active = true')
       } else if (query.status === 'inactive') {
         whereClauses.push('is_active = false')
+      }
+
+      if (query.productType) {
+        params.push(query.productType)
+        whereClauses.push(`p.product_type = $${params.length}`)
       }
 
       if (searchTerm) {

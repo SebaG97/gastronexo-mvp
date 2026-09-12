@@ -1,5 +1,18 @@
 # Client Requirements Log
 
+## Estado actual (Mision 4.1)
+
+- Se incorpora gestion operativa de proveedores:
+  - alta;
+  - edicion;
+  - activacion;
+  - inactivacion;
+  - sin borrado fisico.
+- Se incorpora registro de compras de materias primas con multiples items.
+- Cada compra actualiza inventario del deposito seleccionado y recalcula costo promedio ponderado de las materias primas.
+- Los movimientos de inventario generados por compras quedan trazados con `source_type = 'purchase'` y `purchase_order_id`.
+- Validacion funcional con PostgreSQL real pendiente por indisponibilidad de Docker Desktop/PostgreSQL local durante la ejecucion.
+
 ## Estado actual (Misión 3.1)
 
 - Se incorpora clasificación explícita de productos:

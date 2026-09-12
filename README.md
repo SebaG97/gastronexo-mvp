@@ -518,6 +518,90 @@ Esperado con PostgreSQL detenido:
 
 ### Detener y reiniciar PostgreSQL
 
+### Probar Mision 4.1 (proveedores y compras)
+
+> Estado de validacion local: el codigo compila, pero la prueba real quedo pendiente cuando Docker Desktop/PostgreSQL no estaba disponible en el entorno (`dockerDesktopLinuxEngine` inexistente y `localhost:5432` rechazando conexion).
+
+1. Ejecutar migraciones y builds:
+
+	```bash
+	cd backend && npm.cmd run db:migrate
+	cd backend && npm.cmd run build
+	cd frontend && npm.cmd run build
+	```
+
+2. Crear proveedor activo:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/suppliers \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"name":"Proveedor Demo","taxId":"80000000-1","email":"proveedor@example.com"}'
+	```
+
+3. Crear o identificar deposito activo y dos materias primas activas.
+
+4. Registrar compra con dos items:
+
+	```bash
+	curl -i -X POST http://localhost:3000/api/purchases \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{
+	    \"supplierId\":\"$SUPPLIER_ID\",
+	    \"warehouseId\":\"$WAREHOUSE_A_ID\",
+	    \"invoiceNumber\":\"FAC-001\",
+	    \"purchaseDate\":\"2026-09-12\",
+	    \"paymentMethod\":\"contado\",
+	    \"notes\":\"Compra de validacion MVP\",
+	    \"items\":[
+	      {\"productId\":\"$RAW_PRODUCT_1_ID\",\"quantity\":5,\"unitCost\":12000},
+	      {\"productId\":\"$RAW_PRODUCT_2_ID\",\"quantity\":3,\"unitCost\":8000}
+	    ]
+	  }"
+	```
+
+5. Verificar:
+
+	```bash
+	curl -i "http://localhost:3000/api/purchases?page=1&pageSize=10" -H "Authorization: Bearer $TOKEN_A"
+	curl -i "http://localhost:3000/api/purchases/$PURCHASE_ID" -H "Authorization: Bearer $TOKEN_A"
+	curl -i "http://localhost:3000/api/inventory?warehouseId=$WAREHOUSE_A_ID&page=1&pageSize=20" -H "Authorization: Bearer $TOKEN_A"
+	curl -i "http://localhost:3000/api/inventory/adjustments?warehouseId=$WAREHOUSE_A_ID&page=1&pageSize=20" -H "Authorization: Bearer $TOKEN_A"
+	```
+
+	Esperado:
+
+	- La compra aparece en historial y detalle.
+	- El stock del deposito aumenta por cada materia prima.
+	- Los movimientos de inventario incluyen `sourceType: "purchase"` y `purchaseOrderId`.
+	- El costo de cada materia prima queda recalculado por promedio ponderado.
+
+6. Validar reglas negativas:
+
+	```bash
+	curl -i -X PATCH "http://localhost:3000/api/suppliers/$SUPPLIER_ID/status" \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d '{"isActive":false}'
+
+	curl -i -X POST http://localhost:3000/api/purchases \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"supplierId\":\"$SUPPLIER_ID\",\"warehouseId\":\"$WAREHOUSE_A_ID\",\"invoiceNumber\":\"FAC-BLOCK\",\"purchaseDate\":\"2026-09-12\",\"paymentMethod\":\"contado\",\"items\":[{\"productId\":\"$RAW_PRODUCT_1_ID\",\"quantity\":1,\"unitCost\":1}]}"
+
+	curl -i -X POST http://localhost:3000/api/purchases \
+	  -H "Authorization: Bearer $TOKEN_A" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"supplierId\":\"$ACTIVE_SUPPLIER_ID\",\"warehouseId\":\"$WAREHOUSE_A_ID\",\"invoiceNumber\":\"FAC-FINISHED\",\"purchaseDate\":\"2026-09-12\",\"paymentMethod\":\"contado\",\"items\":[{\"productId\":\"$FINISHED_PRODUCT_ID\",\"quantity\":1,\"unitCost\":1}]}"
+	```
+
+	Esperado:
+
+	- Proveedor inactivo: `400`.
+	- Producto que no sea materia prima activa: `400`.
+	- `viewer` puede leer proveedores/compras, pero `POST/PATCH` responde `403`.
+
 - Detener:
 
   ```bash

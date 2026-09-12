@@ -437,6 +437,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
            ia.new_quantity::text AS "newQuantity",
            ia.delta::text AS delta,
            ia.reason,
+           ia.source_type AS "sourceType",
+           ia.purchase_order_id AS "purchaseOrderId",
            ia.created_by_user_id AS "createdByUserId",
            u.full_name AS "createdByUserName",
            ia.created_at AS "createdAt"
