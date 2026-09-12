@@ -28,6 +28,12 @@ const createProductSchema = z.object({
   productType: productTypeSchema.default('raw_material'),
   cost: z.coerce.number().min(0).default(0),
   categoryId: z.string().uuid().nullable().optional(),
+  isSellable: z.boolean().default(false),
+  isCatalogVisible: z.boolean().default(false),
+  salePrice: z.coerce.number().min(0).nullable().optional(),
+}).refine((input) => !input.isCatalogVisible || input.isSellable, {
+  path: ['isCatalogVisible'],
+  message: 'Un producto visible en catalogo debe ser vendible.',
 })
 
 const updateProductSchema = z
@@ -38,6 +44,9 @@ const updateProductSchema = z
     productType: productTypeSchema.optional(),
     cost: z.coerce.number().min(0).optional(),
     categoryId: z.string().uuid().nullable().optional(),
+    isSellable: z.boolean().optional(),
+    isCatalogVisible: z.boolean().optional(),
+    salePrice: z.coerce.number().min(0).nullable().optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar.',
@@ -46,6 +55,29 @@ const updateProductSchema = z
 const updateProductStatusSchema = z.object({
   isActive: z.boolean(),
 })
+
+const productCutOptionParamsSchema = z.object({
+  id: z.string().uuid(),
+  optionId: z.string().uuid(),
+})
+
+const createProductCutOptionSchema = z.object({
+  cutTypeId: z.string().uuid(),
+  isDefault: z.boolean().default(false),
+  priceModifier: z.coerce.number().min(0).default(0),
+  sortOrder: z.coerce.number().int().min(0).default(0),
+})
+
+const updateProductCutOptionSchema = z
+  .object({
+    isDefault: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    priceModifier: z.coerce.number().min(0).optional(),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, {
+    message: 'Debe enviar al menos un campo para actualizar.',
+  })
 
 function normalizeSku(sku: string | null | undefined) {
   if (sku === undefined || sku === null) {
@@ -97,6 +129,41 @@ async function getCategoryName(client: Pick<typeof pool, 'query'>, organizationI
   )
 
   return categoryResult.rows[0]?.name ?? null
+}
+
+async function getProductCutOptions(client: Pick<typeof pool, 'query'>, organizationId: string, productId: string) {
+  const result = await client.query(
+    `SELECT
+       pco.id,
+       pco.product_id AS "productId",
+       pco.cut_type_id AS "cutTypeId",
+       ct.name AS "cutTypeName",
+       ct.is_active AS "cutTypeIsActive",
+       pco.is_default AS "isDefault",
+       pco.is_active AS "isActive",
+       pco.price_modifier AS "priceModifier",
+       pco.sort_order AS "sortOrder",
+       pco.created_at AS "createdAt",
+       pco.updated_at AS "updatedAt"
+     FROM product_cut_options pco
+     JOIN cut_types ct
+       ON ct.id = pco.cut_type_id
+      AND ct.organization_id = pco.organization_id
+     WHERE pco.organization_id = $1
+       AND pco.product_id = $2
+     ORDER BY pco.sort_order ASC, ct.name ASC`,
+    [organizationId, productId],
+  )
+
+  return result.rows
+}
+
+function isCommercialFieldUpdate(input: z.infer<typeof updateProductSchema>) {
+  return (
+    input.isSellable !== undefined ||
+    input.isCatalogVisible !== undefined ||
+    input.salePrice !== undefined
+  )
 }
 
 export const productsRoutes: FastifyPluginAsync = async (app) => {
@@ -155,6 +222,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.unit,
            p.product_type AS "productType",
            p.cost,
+           p.is_sellable AS "isSellable",
+           p.is_catalog_visible AS "isCatalogVisible",
+           p.sale_price AS "salePrice",
            p.category_id AS "categoryId",
            c.name AS "categoryName",
            p.is_active AS "isActive",
@@ -199,6 +269,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.unit,
            p.product_type AS "productType",
            p.cost,
+           p.is_sellable AS "isSellable",
+           p.is_catalog_visible AS "isCatalogVisible",
+           p.sale_price AS "salePrice",
            p.category_id AS "categoryId",
            c.name AS "categoryName",
            p.is_active AS "isActive",
@@ -218,6 +291,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       if (!product) {
         return reply.code(404).send({ message: 'Producto no encontrado.' })
       }
+
+      product.cutOptions = await getProductCutOptions(pool, organizationId, id)
 
       return { product }
     },
@@ -244,8 +319,19 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
 
         const sku = normalizeSku(input.sku)
         const result = await client.query(
-          `INSERT INTO products (organization_id, name, sku, unit, product_type, cost, category_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO products (
+             organization_id,
+             name,
+             sku,
+             unit,
+             product_type,
+             cost,
+             category_id,
+             is_sellable,
+             is_catalog_visible,
+             sale_price
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING
              id,
              name,
@@ -253,6 +339,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
              unit,
              product_type AS "productType",
              cost,
+             is_sellable AS "isSellable",
+             is_catalog_visible AS "isCatalogVisible",
+             sale_price AS "salePrice",
              category_id AS "categoryId",
              is_active AS "isActive",
              created_at AS "createdAt"`,
@@ -264,6 +353,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
             input.productType,
             input.cost,
             input.categoryId ?? null,
+            input.isSellable,
+            input.isCatalogVisible,
+            input.salePrice ?? null,
           ],
         )
 
@@ -328,6 +420,21 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         assignments.push(`category_id = $${values.length}`)
       }
 
+      if (input.isSellable !== undefined) {
+        values.push(input.isSellable)
+        assignments.push(`is_sellable = $${values.length}`)
+      }
+
+      if (input.isCatalogVisible !== undefined) {
+        values.push(input.isCatalogVisible)
+        assignments.push(`is_catalog_visible = $${values.length}`)
+      }
+
+      if (input.salePrice !== undefined) {
+        values.push(input.salePrice)
+        assignments.push(`sale_price = $${values.length}`)
+      }
+
       assignments.push('updated_at = NOW()')
 
       const client = await pool.connect()
@@ -343,6 +450,47 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
+        if (isCommercialFieldUpdate(input)) {
+          const currentProductResult = await client.query<{
+            isActive: boolean
+            isSellable: boolean
+            isCatalogVisible: boolean
+          }>(
+            `SELECT
+               is_active AS "isActive",
+               is_sellable AS "isSellable",
+               is_catalog_visible AS "isCatalogVisible"
+             FROM products
+             WHERE organization_id = $1
+               AND id = $2
+             LIMIT 1`,
+            [organizationId, id],
+          )
+          const currentProduct = currentProductResult.rows[0]
+
+          if (!currentProduct) {
+            await rollbackTransaction(client)
+            return reply.code(404).send({ message: 'Producto no encontrado.' })
+          }
+
+          if (!currentProduct.isActive) {
+            await rollbackTransaction(client)
+            return reply
+              .code(400)
+              .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+          }
+
+          const nextIsSellable = input.isSellable ?? currentProduct.isSellable
+          const nextIsCatalogVisible = input.isCatalogVisible ?? currentProduct.isCatalogVisible
+
+          if (!nextIsSellable && nextIsCatalogVisible) {
+            await rollbackTransaction(client)
+            return reply
+              .code(400)
+              .send({ message: 'Un producto visible en catalogo debe ser vendible.' })
+          }
+        }
+
         const result = await client.query(
           `UPDATE products
            SET ${assignments.join(', ')}
@@ -355,6 +503,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
              unit,
              product_type AS "productType",
              cost,
+             is_sellable AS "isSellable",
+             is_catalog_visible AS "isCatalogVisible",
+             sale_price AS "salePrice",
              category_id AS "categoryId",
              is_active AS "isActive",
              created_at AS "createdAt"`,
@@ -407,6 +558,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            unit,
            product_type AS "productType",
            cost,
+           is_sellable AS "isSellable",
+           is_catalog_visible AS "isCatalogVisible",
+           sale_price AS "salePrice",
            category_id AS "categoryId",
            is_active AS "isActive",
            created_at AS "createdAt"`,
@@ -423,6 +577,269 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         : null
 
       return { product }
+    },
+  )
+
+  app.get(
+    '/:id/cut-options',
+    { preHandler: requireOrganizationRole('owner', 'admin', 'operator', 'viewer') },
+    async (request, reply) => {
+      const { id } = productIdParamsSchema.parse(request.params)
+      const organizationId = request.organizationAccess!.organization.id
+
+      const productResult = await pool.query(
+        `SELECT id
+         FROM products
+         WHERE organization_id = $1
+           AND id = $2
+         LIMIT 1`,
+        [organizationId, id],
+      )
+
+      if (!productResult.rows[0]) {
+        return reply.code(404).send({ message: 'Producto no encontrado.' })
+      }
+
+      return { cutOptions: await getProductCutOptions(pool, organizationId, id) }
+    },
+  )
+
+  app.post(
+    '/:id/cut-options',
+    { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
+    async (request, reply) => {
+      const { id } = productIdParamsSchema.parse(request.params)
+      const input = createProductCutOptionSchema.parse(request.body)
+      const organizationId = request.organizationAccess!.organization.id
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+
+        const productResult = await client.query<{ id: string; isActive: boolean }>(
+          `SELECT id, is_active AS "isActive"
+           FROM products
+           WHERE organization_id = $1
+             AND id = $2
+           LIMIT 1`,
+          [organizationId, id],
+        )
+        const product = productResult.rows[0]
+
+        if (!product) {
+          await rollbackTransaction(client)
+          return reply.code(404).send({ message: 'Producto no encontrado.' })
+        }
+
+        if (!product.isActive) {
+          await rollbackTransaction(client)
+          return reply
+            .code(400)
+            .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+        }
+
+        const cutTypeResult = await client.query<{ id: string }>(
+          `SELECT id
+           FROM cut_types
+           WHERE organization_id = $1
+             AND id = $2
+             AND is_active = true
+           LIMIT 1`,
+          [organizationId, input.cutTypeId],
+        )
+
+        if (!cutTypeResult.rows[0]) {
+          await rollbackTransaction(client)
+          return reply.code(400).send({ message: 'No se puede asignar un tipo de corte inexistente o inactivo.' })
+        }
+
+        if (input.isDefault) {
+          await client.query(
+            `UPDATE product_cut_options
+             SET is_default = false,
+                 updated_at = NOW()
+             WHERE organization_id = $1
+               AND product_id = $2
+               AND is_active = true`,
+            [organizationId, id],
+          )
+        }
+
+        const result = await client.query(
+          `INSERT INTO product_cut_options (
+             organization_id,
+             product_id,
+             cut_type_id,
+             is_default,
+             price_modifier,
+             sort_order
+           )
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [
+            organizationId,
+            id,
+            input.cutTypeId,
+            input.isDefault,
+            input.priceModifier,
+            input.sortOrder,
+          ],
+        )
+
+        await client.query('COMMIT')
+
+        const cutOptions = await getProductCutOptions(pool, organizationId, id)
+        const cutOption = cutOptions.find((option: { id: string }) => option.id === result.rows[0].id)
+
+        return reply.code(201).send({ cutOption, cutOptions })
+      } catch (error: unknown) {
+        await rollbackTransaction(client)
+        if (isUniqueViolation(error)) {
+          return reply.code(409).send({ message: 'Ese corte ya esta asignado al producto.' })
+        }
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+  )
+
+  app.patch(
+    '/:id/cut-options/:optionId',
+    { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
+    async (request, reply) => {
+      const { id, optionId } = productCutOptionParamsSchema.parse(request.params)
+      const input = updateProductCutOptionSchema.parse(request.body)
+      const organizationId = request.organizationAccess!.organization.id
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+
+        const productResult = await client.query<{ isActive: boolean }>(
+          `SELECT is_active AS "isActive"
+           FROM products
+           WHERE organization_id = $1
+             AND id = $2
+           LIMIT 1`,
+          [organizationId, id],
+        )
+        const product = productResult.rows[0]
+
+        if (!product) {
+          await rollbackTransaction(client)
+          return reply.code(404).send({ message: 'Producto no encontrado.' })
+        }
+
+        if (!product.isActive) {
+          await rollbackTransaction(client)
+          return reply
+            .code(400)
+            .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+        }
+
+        const optionResult = await client.query<{
+          id: string
+          cutTypeId: string
+          isActive: boolean
+          isDefault: boolean
+        }>(
+          `SELECT
+             id,
+             cut_type_id AS "cutTypeId",
+             is_active AS "isActive",
+             is_default AS "isDefault"
+           FROM product_cut_options
+           WHERE organization_id = $1
+             AND product_id = $2
+             AND id = $3
+           LIMIT 1`,
+          [organizationId, id, optionId],
+        )
+        const option = optionResult.rows[0]
+
+        if (!option) {
+          await rollbackTransaction(client)
+          return reply.code(404).send({ message: 'Opcion de corte no encontrada.' })
+        }
+
+        const nextIsActive = input.isActive ?? option.isActive
+        const nextIsDefault = nextIsActive ? input.isDefault ?? option.isDefault : false
+
+        if (nextIsActive) {
+          const cutTypeResult = await client.query(
+            `SELECT id
+             FROM cut_types
+             WHERE organization_id = $1
+               AND id = $2
+               AND is_active = true
+             LIMIT 1`,
+            [organizationId, option.cutTypeId],
+          )
+
+          if (!cutTypeResult.rows[0]) {
+            await rollbackTransaction(client)
+            return reply.code(400).send({ message: 'No se puede activar una opcion con tipo de corte inactivo.' })
+          }
+        }
+
+        if (nextIsDefault) {
+          await client.query(
+            `UPDATE product_cut_options
+             SET is_default = false,
+                 updated_at = NOW()
+             WHERE organization_id = $1
+               AND product_id = $2
+               AND id <> $3
+               AND is_active = true`,
+            [organizationId, id, optionId],
+          )
+        }
+
+        const assignments: string[] = ['is_active = $4', 'is_default = $5', 'updated_at = NOW()']
+        const values: Array<string | number | boolean> = [
+          organizationId,
+          id,
+          optionId,
+          nextIsActive,
+          nextIsDefault,
+        ]
+
+        if (input.priceModifier !== undefined) {
+          values.push(input.priceModifier)
+          assignments.push(`price_modifier = $${values.length}`)
+        }
+
+        if (input.sortOrder !== undefined) {
+          values.push(input.sortOrder)
+          assignments.push(`sort_order = $${values.length}`)
+        }
+
+        const result = await client.query(
+          `UPDATE product_cut_options
+           SET ${assignments.join(', ')}
+           WHERE organization_id = $1
+             AND product_id = $2
+             AND id = $3
+           RETURNING id`,
+          values,
+        )
+
+        await client.query('COMMIT')
+
+        const cutOptions = await getProductCutOptions(pool, organizationId, id)
+        const cutOption = cutOptions.find((entry: { id: string }) => entry.id === result.rows[0].id)
+
+        return { cutOption, cutOptions }
+      } catch (error: unknown) {
+        await rollbackTransaction(client)
+        if (isUniqueViolation(error)) {
+          return reply.code(409).send({ message: 'El producto ya tiene una opcion de corte default activa.' })
+        }
+        throw error
+      } finally {
+        client.release()
+      }
     },
   )
 }

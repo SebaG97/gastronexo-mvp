@@ -1,5 +1,17 @@
 # Client Requirements Log
 
+## Estado actual (Mision 5.1)
+
+- Se prepara la capa comercial futura sin implementar ecommerce publico, carrito ni pedidos.
+- Los productos incorporan configuracion comercial minima:
+  - vendible;
+  - visible en catalogo;
+  - precio de venta independiente del costo.
+- Se incorporan tipos de corte/preparacion reutilizables por organizacion.
+- Los productos pueden definir cortes permitidos y una opcion default.
+- Los tipos de corte son opciones de preparacion asociadas a un producto base, no productos independientes.
+- El inventario continua perteneciendo al producto base.
+
 ## Estado actual (Mision 4.1)
 
 - Se incorpora gestion operativa de proveedores:

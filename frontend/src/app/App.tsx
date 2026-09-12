@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DashboardView } from '../features/dashboard/DashboardView'
 import { MembersView } from '../features/organization/MembersView'
+import { CutTypesView } from '../features/products/CutTypesView'
 import { ProductsView } from '../features/products/ProductsView'
 import { PurchasesView } from '../features/purchases/PurchasesView'
 import { ProductionView } from '../features/production/ProductionView'
@@ -24,6 +25,7 @@ import { SystemShell, type AppSection } from './components/SystemShell'
 const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   dashboard: { title: 'Dashboard', action: 'Ver reporte' },
   products: { title: 'Productos', action: 'Nuevo producto' },
+  cutTypes: { title: 'Tipos de corte', action: 'Nuevo tipo' },
   purchases: { title: 'Compras', action: 'Registrar compra' },
   production: { title: 'Producción', action: 'Nueva producción' },
   waste: { title: 'Mermas', action: 'Registrar merma' },
@@ -43,6 +45,7 @@ export function App() {
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [productCreateRequestId, setProductCreateRequestId] = useState(0)
+  const [cutTypeCreateRequestId, setCutTypeCreateRequestId] = useState(0)
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
 
@@ -63,6 +66,15 @@ export function App() {
           token={session.token}
           canWriteProducts={canWriteProducts}
           createRequestId={productCreateRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
+      cutTypes: session ? (
+        <CutTypesView
+          token={session.token}
+          canWriteProducts={canWriteProducts}
+          createRequestId={cutTypeCreateRequestId}
         />
       ) : (
         <DashboardView />
@@ -92,7 +104,14 @@ export function App() {
     }
 
     return views[activeSection]
-  }, [activeSection, productCreateRequestId, purchaseCreateRequestId, session, stockAdjustRequestId])
+  }, [
+    activeSection,
+    cutTypeCreateRequestId,
+    productCreateRequestId,
+    purchaseCreateRequestId,
+    session,
+    stockAdjustRequestId,
+  ])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -213,10 +232,17 @@ export function App() {
 
   const metadata = sectionMetadata[activeSection]
   const isPrimaryActionDisabled =
-    (activeSection === 'products' || activeSection === 'purchases' || activeSection === 'stock') &&
+    (activeSection === 'products' ||
+      activeSection === 'cutTypes' ||
+      activeSection === 'purchases' ||
+      activeSection === 'stock') &&
     !session.organization.capabilities.canWriteProducts
   const primaryActionDisabledReason =
-    (activeSection === 'products' || activeSection === 'purchases' || activeSection === 'stock') && isPrimaryActionDisabled
+    (activeSection === 'products' ||
+      activeSection === 'cutTypes' ||
+      activeSection === 'purchases' ||
+      activeSection === 'stock') &&
+    isPrimaryActionDisabled
       ? 'Requiere permisos de owner, admin u operator.'
       : undefined
 
@@ -228,6 +254,13 @@ export function App() {
     if (activeSection === 'products') {
       if (session.organization.capabilities.canWriteProducts) {
         setProductCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'cutTypes') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setCutTypeCreateRequestId((current) => current + 1)
       }
       return
     }

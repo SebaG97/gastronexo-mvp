@@ -46,6 +46,22 @@
   background: var(--sys-bg);
 }
 
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: var(--sys-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--sys-primary);
+}
+
 .field input:focus {
   border-color: var(--sys-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
@@ -455,6 +471,23 @@
   gap: 8px;
 }
 
+.products-form__section {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+}
+
+.products-form__section legend {
+  padding: 0 6px;
+  color: var(--sys-text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .form-error {
   color: var(--sys-danger);
   font-size: 12px;
@@ -484,6 +517,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.products-table__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .products-table__no-actions {
@@ -535,6 +574,48 @@
 .products-categories__field {
   min-width: 240px;
   margin: 0;
+}
+
+.cut-types-page {
+  display: grid;
+  gap: 12px;
+}
+
+.cut-types-panel {
+  max-width: 1080px;
+}
+
+.cut-types-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.cut-types-form__actions,
+.product-cuts__form {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.product-cuts {
+  display: grid;
+  gap: 12px;
+}
+
+.product-cuts__form {
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--sys-border);
+}
+
+.product-cuts__form .field {
+  min-width: 190px;
+}
+
+.product-cuts__default {
+  align-self: center;
 }
 
 .stock-page {
@@ -806,8 +887,10 @@
   }
 
   .products-toolbar,
-  .products-form,
-  .purchase-form,
+    .products-form,
+    .products-form__section,
+    .cut-types-form,
+    .purchase-form,
   .supplier-form,
   .stock-inventory__toolbar,
   .stock-adjustment-form,

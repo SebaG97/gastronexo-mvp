@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   ChefHat,
+  CookingPot,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -20,6 +21,7 @@ import type { SessionOrganization } from '../../shared/lib/auth-api'
 export type AppSection =
   | 'dashboard'
   | 'products'
+  | 'cutTypes'
   | 'purchases'
   | 'production'
   | 'waste'
@@ -36,6 +38,7 @@ type NavigationItem = {
 const navigation: NavigationItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'products', label: 'Productos', icon: Package },
+  { id: 'cutTypes', label: 'Tipos de corte', icon: CookingPot },
   { id: 'purchases', label: 'Compras', icon: Truck },
   { id: 'production', label: 'Producción', icon: UtensilsCrossed },
   { id: 'waste', label: 'Mermas', icon: ReceiptText },

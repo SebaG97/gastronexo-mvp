@@ -1,5 +1,80 @@
 # Functional Readiness Plan
 
+## Mision 5.1 - Modelo comercial y tipos de corte
+
+### Alcance implementado
+
+- Productos: configuracion comercial minima con `is_sellable`, `is_catalog_visible` y `sale_price`.
+- Tipos de corte: entidad reutilizable por organizacion con nombre, descripcion opcional, estado activo/inactivo y unicidad case-insensitive por organizacion.
+- Opciones de corte por producto: relacion entre producto base y tipo de corte con estado, default unico activo, modificador de precio preparado y orden.
+- Panel administrativo: pantalla especifica de Tipos de corte y gestion de cortes permitidos al editar/consultar un producto.
+- Permisos: `owner`, `admin` y `operator` con lectura/escritura; `viewer` en solo lectura.
+
+### Decisiones de dominio
+
+Los tipos de corte son opciones de preparacion asociadas a un producto base, no productos independientes.
+
+El inventario continua perteneciendo al producto base.
+
+- `sale_price` es independiente de `cost`; compras e inventario siguen usando costo/promedio ponderado.
+- Un producto visible en catalogo debe ser vendible.
+- Un producto inactivo no acepta nueva configuracion comercial ni nuevas opciones de corte.
+- `Sin corte` no se asigna automaticamente; queda como opcion configurable por producto.
+- Inactivar un tipo de corte global no elimina relaciones historicas con productos.
+
+### Endpoints incorporados
+
+- Tipos de corte (`/api/cut-types`):
+  - `GET ?status=active|inactive|all&q=`
+  - `POST`
+  - `PATCH /:id`
+  - `PATCH /:id/status`
+- Productos (`/api/products`):
+  - `GET/POST/PATCH` y detalle exponen `isSellable`, `isCatalogVisible`, `salePrice`.
+  - `GET /:id/cut-options`
+  - `POST /:id/cut-options`
+  - `PATCH /:id/cut-options/:optionId`
+
+### Validaciones ejecutadas
+
+- `cd backend && npm.cmd run db:migrate`: exitoso; aplicada `005_commercial_products_and_cut_types.sql`.
+- `cd backend && npm.cmd run build`: exitoso.
+- `cd frontend && npm.cmd run build`: exitoso.
+- Flujo API real en PostgreSQL:
+  - organizacion A/B;
+  - usuario owner y usuario viewer;
+  - cortes `Sin corte`, `Baston`, `Juliana`, `Cubos`;
+  - productos `Papa Mision 5.1 20260912163958` y `Cebolla Mision 5.1 20260912163958`;
+  - Papa vendible/visible con precio `5000.00`, cortes `Sin corte`, `Baston`, `Cubos`, cambio de default a `Baston`;
+  - Cebolla vendible/visible con precio `6500.00`, cortes `Juliana`, `Cubos`, default `Juliana`;
+  - inactivacion global de `Juliana` sin borrar la relacion existente.
+
+### Validaciones negativas ejecutadas
+
+- Nombre de corte vacio: `400`.
+- Nombre duplicado dentro de organizacion: `409`.
+- Corte duplicado en producto: `409`.
+- Asignar corte inactivo: `400`.
+- Precio de venta negativo: `400`.
+- `viewer` intentando escribir: `403`.
+- Usar corte de otra organizacion: `400`.
+- Producto inactivo aceptando nueva configuracion: `400`.
+- Producto no vendible visible en catalogo: `400`.
+
+### Compatibilidad validada
+
+- Productos: `GET /api/products` respondio `200`.
+- Categorias: `GET /api/product-categories` respondio `200`.
+- Depositos/inventario: `GET /api/warehouses` y `GET /api/inventory` respondieron `200`.
+- Proveedores/compras: `GET /api/suppliers` y `GET /api/purchases` respondieron `200`.
+- No se modifico la logica de costo promedio ni los movimientos de inventario por compras.
+
+### Estado y pendientes
+
+- Codigo, migracion, frontend, documentacion y pruebas API reales: completados.
+- `docker compose ps` no pudo consultarse por permiso del pipe `dockerDesktopLinuxEngine`, aunque PostgreSQL local si estuvo disponible para migrar y probar.
+- Ecommerce publico, carrito, pedidos, precios avanzados y recargos reales por corte quedan fuera de alcance.
+
 ## Mision 4.1 - Proveedores y compras operativas
 
 ### Alcance implementado

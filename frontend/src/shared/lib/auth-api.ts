@@ -83,10 +83,14 @@ export type Product = {
   unit: ProductUnit
   productType: ProductType
   cost: number
+  isSellable: boolean
+  isCatalogVisible: boolean
+  salePrice: string | number | null
   categoryId: string | null
   categoryName: string | null
   isActive: boolean
   createdAt: string
+  cutOptions?: ProductCutOption[]
 }
 
 export type ProductUnit = 'unit' | 'kg' | 'g' | 'l' | 'ml' | 'box' | 'portion'
@@ -103,6 +107,49 @@ export type ProductCategoriesStatusFilter = 'active' | 'inactive' | 'all'
 
 export type ProductCategoriesListResponse = {
   categories: ProductCategory[]
+}
+
+export type CutType = {
+  id: string
+  name: string
+  description: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CutTypesStatusFilter = 'active' | 'inactive' | 'all'
+
+export type CutTypesListRequest = {
+  q?: string
+  status?: CutTypesStatusFilter
+}
+
+export type CutTypesListResponse = {
+  cutTypes: CutType[]
+}
+
+export type CutTypeMutationInput = {
+  name: string
+  description?: string | null
+}
+
+export type ProductCutOption = {
+  id: string
+  productId: string
+  cutTypeId: string
+  cutTypeName: string
+  cutTypeIsActive: boolean
+  isDefault: boolean
+  isActive: boolean
+  priceModifier: string | number
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProductCutOptionsListResponse = {
+  cutOptions: ProductCutOption[]
 }
 
 export type ProductsStatusFilter = 'active' | 'inactive' | 'all'
@@ -132,6 +179,9 @@ export type ProductMutationInput = {
   productType: ProductType
   cost: number
   categoryId?: string | null
+  isSellable?: boolean
+  isCatalogVisible?: boolean
+  salePrice?: number | null
 }
 
 export type WarehousesStatusFilter = 'active' | 'inactive' | 'all'
@@ -513,6 +563,92 @@ export async function updateProductStatus(productId: string, isActive: boolean, 
     {
       method: 'PATCH',
       body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getCutTypes(query: CutTypesListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<CutTypesListResponse>(`/api/cut-types${suffix}`, { method: 'GET' }, token)
+}
+
+export async function createCutType(input: CutTypeMutationInput, token: string) {
+  return apiRequest<{ cutType: CutType }>(
+    '/api/cut-types',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateCutType(cutTypeId: string, input: CutTypeMutationInput, token: string) {
+  return apiRequest<{ cutType: CutType }>(
+    `/api/cut-types/${cutTypeId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateCutTypeStatus(cutTypeId: string, isActive: boolean, token: string) {
+  return apiRequest<{ cutType: CutType }>(
+    `/api/cut-types/${cutTypeId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getProductCutOptions(productId: string, token: string) {
+  return apiRequest<ProductCutOptionsListResponse>(
+    `/api/products/${productId}/cut-options`,
+    { method: 'GET' },
+    token,
+  )
+}
+
+export async function createProductCutOption(
+  productId: string,
+  input: { cutTypeId: string; isDefault?: boolean; priceModifier?: number; sortOrder?: number },
+  token: string,
+) {
+  return apiRequest<{ cutOption: ProductCutOption; cutOptions: ProductCutOption[] }>(
+    `/api/products/${productId}/cut-options`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateProductCutOption(
+  productId: string,
+  optionId: string,
+  input: { isDefault?: boolean; isActive?: boolean; priceModifier?: number; sortOrder?: number },
+  token: string,
+) {
+  return apiRequest<{ cutOption: ProductCutOption; cutOptions: ProductCutOption[] }>(
+    `/api/products/${productId}/cut-options/${optionId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
     },
     token,
   )

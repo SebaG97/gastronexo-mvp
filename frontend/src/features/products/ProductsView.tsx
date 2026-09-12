@@ -13,6 +13,7 @@ import {
   type ProductsStatusFilter,
 } from '../../shared/lib/auth-api'
 import { ProductCategoriesManager } from './ProductCategoriesManager'
+import { ProductCutOptionsManager } from './ProductCutOptionsManager'
 import { ProductForm, type ProductFormValues } from './ProductForm'
 import { productTypeLabelByKey } from './product-types'
 import { productUnitLabelByKey } from './product-units'
@@ -39,6 +40,14 @@ function formatCost(value: number) {
   return `Gs. ${guaraniFormatter.format(Math.round(value))}`
 }
 
+function formatSalePrice(value: Product['salePrice']) {
+  if (value === null || value === undefined) {
+    return 'Sin precio'
+  }
+
+  return `Gs. ${guaraniFormatter.format(Math.round(Number(value)))}`
+}
+
 function toFormValues(product: Product): ProductFormValues {
   return {
     name: product.name,
@@ -47,6 +56,9 @@ function toFormValues(product: Product): ProductFormValues {
     productType: product.productType,
     cost: String(product.cost),
     categoryId: product.categoryId ?? '',
+    isSellable: product.isSellable,
+    isCatalogVisible: product.isCatalogVisible,
+    salePrice: product.salePrice === null ? '' : String(product.salePrice),
   }
 }
 
@@ -240,6 +252,16 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
         </Panel>
       ) : null}
 
+      {formMode.type === 'edit' ? (
+        <Panel className="products-panel" title="Preparación / cortes disponibles">
+          <ProductCutOptionsManager
+            token={token}
+            product={formMode.product}
+            canWriteProducts={canWriteProducts}
+          />
+        </Panel>
+      ) : null}
+
       <Panel className="products-panel" title="Catálogo" action={<span>Total: {total}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
@@ -281,6 +303,8 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                 <th>Categoría</th>
                 <th>Unidad</th>
                 <th>Costo</th>
+                <th>Comercial</th>
+                <th>Precio venta</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -298,6 +322,17 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                   <td>{product.categoryName ?? 'Sin categoría'}</td>
                   <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
                   <td>{formatCost(product.cost)}</td>
+                  <td>
+                    <span className="products-table__badges">
+                      <StatusBadge tone={product.isSellable ? 'success' : 'warning'}>
+                        {product.isSellable ? 'Vendible' : 'No vendible'}
+                      </StatusBadge>
+                      <StatusBadge tone={product.isCatalogVisible ? 'success' : 'warning'}>
+                        {product.isCatalogVisible ? 'Visible' : 'Oculto'}
+                      </StatusBadge>
+                    </span>
+                  </td>
+                  <td>{formatSalePrice(product.salePrice)}</td>
                   <td>
                     <StatusBadge tone={product.isActive ? 'success' : 'warning'}>
                       {product.isActive ? 'Activo' : 'Inactivo'}
@@ -324,7 +359,13 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                         </Button>
                       </>
                     ) : (
-                      <span className="products-table__no-actions">Solo lectura</span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setFormMode({ type: 'edit', product })}
+                      >
+                        Ver cortes
+                      </Button>
                     )}
                   </td>
                 </tr>
