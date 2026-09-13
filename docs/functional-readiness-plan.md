@@ -1,5 +1,113 @@
 # Functional Readiness Plan
 
+## Mision 5.2 - Motor administrativo de pedidos
+
+### Alcance implementado
+
+- Clientes: modelo minimo por organizacion con alta, edicion, activacion/inactivacion, listado, detalle y permisos de solo lectura para `viewer`.
+- Pedidos: cabecera operativa con `order_number` legible (`PED-000001` por organizacion), cliente, fechas, notas, estado, subtotal, total y usuario creador.
+- Items de pedido: productos vendibles con corte opcional/validado, cantidad, precio base congelado, modificador de corte congelado, subtotal y snapshots de nombre/unidad/corte.
+- Historial de estados: tabla `order_status_history` con estado origen/destino, usuario y fecha.
+- Panel administrativo: navegacion `Clientes` y `Pedidos`, listado filtrable, formulario de pedido manual, detalle, acciones por estado y bloqueo de escritura para `viewer`.
+
+### Decisiones de dominio
+
+- Pedidos son dominio central compartido por administracion y el futuro ecommerce; el ecommerce futuro debe consumir este mismo backend.
+- El motor de pedido vive en backend y no depende de logica del frontend para precios, cortes ni transiciones.
+- `order_items` congela `unit_price`, `cut_price_modifier`, `subtotal`, nombre/unidad de producto y nombre de corte para preservar historico ante cambios comerciales posteriores.
+- `is_catalog_visible` no es requisito para pedidos administrativos: un producto puede venderse internamente aunque este oculto en ecommerce.
+- Crear o editar pedidos no reserva ni descuenta inventario en Mision 5.2.
+- Los pedidos `new` y `confirmed` pueden editar datos/items; `preparing`, `ready`, `delivered` y `cancelled` no permiten editar items.
+
+### Estados y transiciones
+
+- `new -> confirmed | cancelled`
+- `confirmed -> preparing | cancelled`
+- `preparing -> ready | cancelled`
+- `ready -> delivered`
+- `delivered` y `cancelled` son terminales para esta etapa.
+
+### Endpoints incorporados
+
+- Clientes (`/api/customers`):
+  - `GET ?status=active|inactive|all&q=&page=&pageSize=`
+  - `GET /:id`
+  - `POST`
+  - `PATCH /:id`
+  - `PATCH /:id/status`
+- Pedidos (`/api/orders`):
+  - `GET ?status=&q=&from=&to=&page=&pageSize=`
+  - `GET /:id`
+  - `POST`
+  - `PATCH /:id`
+  - `PATCH /:id/status`
+
+### Validaciones ejecutadas
+
+- `docker compose up -d postgres`: bloqueado por permisos del pipe `dockerDesktopLinuxEngine`.
+- PostgreSQL local existente en `localhost:5432`: usado correctamente.
+- `cd backend && npm.cmd run db:migrate`: exitoso; aplicada `006_customers_and_orders.sql`.
+- `cd backend && npm.cmd run build`: exitoso.
+- `cd frontend && npm.cmd run build`: exitoso.
+- `/health`: `200 { status: "ok" }`.
+- `/ready`: `200 { status: "ready" }`.
+- Flujo API real en PostgreSQL:
+  - cliente `Restaurante Don Pepe`;
+  - producto `Papa 1789246502160`, corte `Baston 1789246502160`, cantidad `10.000`, precio `5000.00`, modificador `1000.00`, subtotal `60000.00`;
+  - producto `Cebolla 1789246502160`, corte `Cubos 1789246502160`, cantidad `5.000`, precio `4000.00`, modificador `500.00`, subtotal `22500.00`;
+  - total `82500.00`;
+  - pedido `PED-000001`;
+  - recorrido `new -> confirmed -> preparing -> ready -> delivered`;
+  - historial persistido con cinco entradas incluyendo alta inicial.
+
+### Validaciones negativas ejecutadas
+
+- Pedido sin cliente valido: `404`.
+- Cliente inactivo: `400`.
+- Pedido sin items: `400`.
+- Cantidad `0`: `400`.
+- Cantidad negativa: `400`.
+- Producto no vendible: `400`.
+- Producto inactivo: `400`.
+- Corte no asociado al producto: `400`.
+- Corte inactivo: `400`.
+- Recurso de organizacion cruzada: `404`.
+- `viewer` creando pedido: `403`.
+- `viewer` cambiando estado: `403`.
+- Transicion invalida desde `delivered` a `new`: `400`.
+- Edicion de pedido entregado: `400`.
+- Producto vendible sin precio de venta valido: `400`.
+
+### Compatibilidad validada
+
+- Productos: `GET /api/products` respondio `200`.
+- Tipos de corte: `GET /api/cut-types` respondio `200`.
+- Inventario: `GET /api/inventory` respondio `200`.
+- Compras: `GET /api/purchases` respondio `200`.
+- Proveedores: `GET /api/suppliers` respondio `200`.
+- Categorias: `GET /api/product-categories` respondio `200`.
+- Depositos: `GET /api/warehouses` respondio `200`.
+- Se verifico explicitamente que crear el pedido no altero inventario: balances antes `0`, despues `0`, comparacion sin cambios.
+
+### Auditoria visual inicial
+
+- Referencias usadas: `.claude/skills/ui-ux-pro-max`, `.claude/skills/design-system`, `.claude/skills/ui-styling`, `docs/style-guide.md` y `docs/frontend-system-template.md`.
+- Pantallas revisadas por codigo/patron: sidebar/topbar, Productos, Tipos de corte, Inventario, Proveedores y Compras.
+- Patrones reutilizados: `SystemShell`, `Panel`, `Button`, `StatusBadge`, tablas compactas, filtros con labels visibles, mensajes `aria-live`, confirmacion para acciones destructivas y breakpoints moviles existentes.
+- Observacion visual existente: hay mojibake en textos historicos de la UI/documentacion; no se corrigio globalmente para evitar rediseño o churn fuera de alcance.
+- Validacion interactiva con navegador no disponible desde Computer Use; Vite dev/preview fallaron por `spawn EPERM`, pero el build de produccion compilo correctamente y se pudo servir `dist` por Python en `http://localhost:5173`.
+
+### Bug corregido
+
+- `GET /api/products` fallaba con `500` por referencia ambigua a `is_active` tras join con categorias.
+- Correccion: calificar filtros como `p.is_active` en `products.routes.ts`.
+
+### Estado y pendientes
+
+- Codigo, migracion, frontend, documentacion y pruebas API reales: completados.
+- Pendiente real: validacion visual interactiva con screenshot en navegador cuando el entorno permita controlar/abrir browser o cuando Vite no falle por `spawn EPERM`.
+- Ecommerce publico, carrito, pagos, reservas/descuentos de stock, direcciones multiples, descuentos, impuestos y precios especiales quedan fuera de alcance.
+
 ## Mision 5.1 - Modelo comercial y tipos de corte
 
 ### Alcance implementado

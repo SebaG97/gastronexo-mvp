@@ -4,10 +4,12 @@ import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { config } from './config.js'
 import { pool } from './db/pool.js'
+import { customersRoutes } from './modules/customers/customers.routes.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
 import { inventoryRoutes } from './modules/inventory/inventory.routes.js'
 import { warehousesRoutes } from './modules/inventory/warehouses.routes.js'
 import { organizationMembersRoutes } from './modules/organization/organization-members.routes.js'
+import { ordersRoutes } from './modules/orders/orders.routes.js'
 import { purchasesRoutes } from './modules/purchases/purchases.routes.js'
 import { suppliersRoutes } from './modules/purchases/suppliers.routes.js'
 import { cutTypesRoutes } from './modules/products/cut-types.routes.js'
@@ -66,6 +68,7 @@ export function buildApp() {
 
   app.register(authRoutes, { prefix: '/api/auth' })
   app.register(organizationMembersRoutes, { prefix: '/api/organization' })
+  app.register(customersRoutes, { prefix: '/api/customers' })
   app.register(cutTypesRoutes, { prefix: '/api/cut-types' })
   app.register(productCategoriesRoutes, { prefix: '/api/product-categories' })
   app.register(productsRoutes, { prefix: '/api/products' })
@@ -73,6 +76,7 @@ export function buildApp() {
   app.register(inventoryRoutes, { prefix: '/api/inventory' })
   app.register(suppliersRoutes, { prefix: '/api/suppliers' })
   app.register(purchasesRoutes, { prefix: '/api/purchases' })
+  app.register(ordersRoutes, { prefix: '/api/orders' })
 
   return app
 }

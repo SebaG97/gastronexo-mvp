@@ -701,6 +701,131 @@
   gap: 12px;
 }
 
+.customers-page,
+.orders-page {
+  display: grid;
+  gap: 12px;
+}
+
+.customers-panel,
+.orders-panel {
+  max-width: 1180px;
+}
+
+.customer-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.customer-form__notes {
+  grid-column: span 2;
+}
+
+.order-form {
+  display: grid;
+  gap: 10px;
+}
+
+.order-form__section {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+  background: var(--sys-bg);
+}
+
+.order-form__section--wide {
+  grid-template-columns: 1fr;
+}
+
+.order-form__section-header,
+.order-form__summary,
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.order-form__notes {
+  grid-column: 1 / -1;
+}
+
+.customer-inline-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.order-form__items {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+  background: var(--sys-bg);
+}
+
+.order-item-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.7fr) 120px 120px 130px auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.order-item-row__subtotal,
+.order-item-row__muted {
+  display: grid;
+  gap: 2px;
+  min-height: 34px;
+  align-content: center;
+  color: var(--sys-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-item-row__subtotal small,
+.order-item-row__muted {
+  color: var(--sys-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.order-form__summary {
+  justify-content: flex-end;
+  padding: 6px 0;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-bottom: 10px;
+  color: var(--sys-text-muted);
+  font-size: 13px;
+}
+
+.order-actions {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.order-history {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sys-border);
+  color: var(--sys-text-muted);
+  font-size: 13px;
+}
+
 .purchases-panel {
   max-width: 1180px;
 }
@@ -890,6 +1015,9 @@
     .products-form,
     .products-form__section,
     .cut-types-form,
+    .customer-form,
+    .customer-inline-form,
+    .order-form__section,
     .purchase-form,
   .supplier-form,
   .stock-inventory__toolbar,
@@ -899,6 +1027,10 @@
   }
 
   .purchase-item-row {
+    grid-template-columns: 1fr;
+  }
+
+  .order-item-row {
     grid-template-columns: 1fr;
   }
 

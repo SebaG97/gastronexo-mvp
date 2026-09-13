@@ -1,6 +1,11 @@
 # Gastronexo MVP
 
-Base frontend para una consola operativa de gestión gastronómica.
+Base frontend y backend para una consola operativa de gestion gastronomica.
+
+El MVP incluye productos, categorias, tipos de corte, inventario base, proveedores,
+compras y un motor administrativo de pedidos. Los pedidos son el dominio central
+que debera consumir el ecommerce publico futuro: precios, cortes, subtotales,
+total e historial de estados se resuelven en backend.
 
 ## Inicio rápido
 

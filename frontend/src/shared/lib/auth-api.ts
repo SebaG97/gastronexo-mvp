@@ -310,6 +310,135 @@ export type SupplierMutationInput = {
   notes?: string | null
 }
 
+export type Customer = {
+  id: string
+  name: string
+  businessName: string | null
+  documentNumber: string | null
+  phone: string | null
+  email: string | null
+  notes: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CustomersStatusFilter = 'active' | 'inactive' | 'all'
+
+export type CustomersListRequest = {
+  q?: string
+  status?: CustomersStatusFilter
+  page?: number
+  pageSize?: number
+}
+
+export type CustomersListResponse = {
+  customers: Customer[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type CustomerMutationInput = {
+  name: string
+  businessName?: string | null
+  documentNumber?: string | null
+  phone?: string | null
+  email?: string | null
+  notes?: string | null
+}
+
+export type OrderStatus = 'new' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'cancelled'
+
+export type Order = {
+  id: string
+  orderNumber: string
+  customerId: string
+  customerName: string
+  status: OrderStatus
+  orderDate: string
+  requestedDeliveryDate: string | null
+  subtotal: string
+  total: string
+  itemCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type OrderItem = {
+  id: string
+  productId: string
+  cutTypeId: string | null
+  quantity: string
+  unitPrice: string
+  cutPriceModifier: string
+  subtotal: string
+  productNameSnapshot: string
+  productUnitSnapshot: ProductUnit
+  cutNameSnapshot: string | null
+  createdAt: string
+}
+
+export type OrderHistoryEntry = {
+  id: string
+  fromStatus: OrderStatus | null
+  toStatus: OrderStatus
+  changedBy: string
+  changedByUserName: string
+  createdAt: string
+}
+
+export type OrderDetail = Omit<Order, 'itemCount'> & {
+  customerBusinessName: string | null
+  customerDocumentNumber: string | null
+  customerPhone: string | null
+  customerEmail: string | null
+  notes: string | null
+  createdBy: string
+  createdByUserName: string
+  items: OrderItem[]
+  history: OrderHistoryEntry[]
+}
+
+export type OrdersListRequest = {
+  q?: string
+  status?: OrderStatus | 'all'
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+export type OrdersListResponse = {
+  orders: Order[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type OrderMutationInput = {
+  customerId: string
+  orderDate?: string
+  requestedDeliveryDate?: string | null
+  notes?: string | null
+  items: Array<{
+    productId: string
+    cutTypeId?: string | null
+    quantity: number
+  }>
+}
+
+export type OrderDetailResponse = {
+  order: OrderDetail
+  transitions: OrderStatus[]
+}
+
 export type PurchaseItem = {
   id: string
   productId: string
@@ -925,6 +1054,126 @@ export async function createPurchase(input: PurchaseMutationInput, token: string
     {
       method: 'POST',
       body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function getCustomers(query: CustomersListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<CustomersListResponse>(`/api/customers${suffix}`, { method: 'GET' }, token)
+}
+
+export async function createCustomer(input: CustomerMutationInput, token: string) {
+  return apiRequest<{ customer: Customer }>(
+    '/api/customers',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateCustomer(
+  customerId: string,
+  input: Partial<CustomerMutationInput>,
+  token: string,
+) {
+  return apiRequest<{ customer: Customer }>(
+    `/api/customers/${customerId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateCustomerStatus(customerId: string, isActive: boolean, token: string) {
+  return apiRequest<{ customer: Customer }>(
+    `/api/customers/${customerId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token,
+  )
+}
+
+export async function getOrders(query: OrdersListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.from) {
+    searchParams.set('from', query.from)
+  }
+  if (query.to) {
+    searchParams.set('to', query.to)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<OrdersListResponse>(`/api/orders${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getOrderById(orderId: string, token: string) {
+  return apiRequest<OrderDetailResponse>(`/api/orders/${orderId}`, { method: 'GET' }, token)
+}
+
+export async function createOrder(input: OrderMutationInput, token: string) {
+  return apiRequest<OrderDetailResponse>(
+    '/api/orders',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateOrder(orderId: string, input: Partial<OrderMutationInput>, token: string) {
+  return apiRequest<OrderDetailResponse>(
+    `/api/orders/${orderId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+    token,
+  )
+}
+
+export async function updateOrderStatus(orderId: string, status: OrderStatus, token: string) {
+  return apiRequest<OrderDetailResponse>(
+    `/api/orders/${orderId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     },
     token,
   )

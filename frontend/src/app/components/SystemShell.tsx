@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import {
   ChefHat,
   CookingPot,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -22,6 +23,8 @@ export type AppSection =
   | 'dashboard'
   | 'products'
   | 'cutTypes'
+  | 'customers'
+  | 'orders'
   | 'purchases'
   | 'production'
   | 'waste'
@@ -39,6 +42,8 @@ const navigation: NavigationItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'products', label: 'Productos', icon: Package },
   { id: 'cutTypes', label: 'Tipos de corte', icon: CookingPot },
+  { id: 'customers', label: 'Clientes', icon: Users },
+  { id: 'orders', label: 'Pedidos', icon: ClipboardList },
   { id: 'purchases', label: 'Compras', icon: Truck },
   { id: 'production', label: 'Producción', icon: UtensilsCrossed },
   { id: 'waste', label: 'Mermas', icon: ReceiptText },

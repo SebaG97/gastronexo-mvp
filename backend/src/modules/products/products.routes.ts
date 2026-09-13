@@ -181,9 +181,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       const params: Array<string | number | boolean> = [organizationId]
 
       if (query.status === 'active') {
-        whereClauses.push('is_active = true')
+        whereClauses.push('p.is_active = true')
       } else if (query.status === 'inactive') {
-        whereClauses.push('is_active = false')
+        whereClauses.push('p.is_active = false')
       }
 
       if (query.productType) {

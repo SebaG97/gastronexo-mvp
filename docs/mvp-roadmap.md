@@ -6,6 +6,8 @@
 - Compras
 - Configuracion comercial de productos
 - Tipos de corte/preparacion
+- Clientes basico
+- Pedidos administrativos
 - Produccion
 - Mermas
 - Ventas
@@ -15,9 +17,8 @@
 ## Amarillo: expansion operativa
 
 - Proveedores
-- Clientes basico
-- Pedidos basico
 - Exportaciones
+- Ecommerce publico consume motor de pedidos
 
 ## Rojo: capacidades avanzadas
 

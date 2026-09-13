@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DashboardView } from '../features/dashboard/DashboardView'
+import { CustomersView } from '../features/customers/CustomersView'
 import { MembersView } from '../features/organization/MembersView'
+import { OrdersView } from '../features/orders/OrdersView'
 import { CutTypesView } from '../features/products/CutTypesView'
 import { ProductsView } from '../features/products/ProductsView'
 import { PurchasesView } from '../features/purchases/PurchasesView'
@@ -26,6 +28,8 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   dashboard: { title: 'Dashboard', action: 'Ver reporte' },
   products: { title: 'Productos', action: 'Nuevo producto' },
   cutTypes: { title: 'Tipos de corte', action: 'Nuevo tipo' },
+  customers: { title: 'Clientes', action: 'Nuevo cliente' },
+  orders: { title: 'Pedidos', action: 'Nuevo pedido' },
   purchases: { title: 'Compras', action: 'Registrar compra' },
   production: { title: 'Producción', action: 'Nueva producción' },
   waste: { title: 'Mermas', action: 'Registrar merma' },
@@ -46,6 +50,8 @@ export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [productCreateRequestId, setProductCreateRequestId] = useState(0)
   const [cutTypeCreateRequestId, setCutTypeCreateRequestId] = useState(0)
+  const [customerCreateRequestId, setCustomerCreateRequestId] = useState(0)
+  const [orderCreateRequestId, setOrderCreateRequestId] = useState(0)
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
 
@@ -79,6 +85,24 @@ export function App() {
       ) : (
         <DashboardView />
       ),
+      customers: session ? (
+        <CustomersView
+          token={session.token}
+          canWriteCustomers={canWriteProducts}
+          createRequestId={customerCreateRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
+      orders: session ? (
+        <OrdersView
+          token={session.token}
+          canWriteOrders={canWriteProducts}
+          createRequestId={orderCreateRequestId}
+        />
+      ) : (
+        <DashboardView />
+      ),
       purchases: session ? (
         <PurchasesView
           token={session.token}
@@ -106,7 +130,9 @@ export function App() {
     return views[activeSection]
   }, [
     activeSection,
+    customerCreateRequestId,
     cutTypeCreateRequestId,
+    orderCreateRequestId,
     productCreateRequestId,
     purchaseCreateRequestId,
     session,
@@ -234,12 +260,16 @@ export function App() {
   const isPrimaryActionDisabled =
     (activeSection === 'products' ||
       activeSection === 'cutTypes' ||
+      activeSection === 'customers' ||
+      activeSection === 'orders' ||
       activeSection === 'purchases' ||
       activeSection === 'stock') &&
     !session.organization.capabilities.canWriteProducts
   const primaryActionDisabledReason =
     (activeSection === 'products' ||
       activeSection === 'cutTypes' ||
+      activeSection === 'customers' ||
+      activeSection === 'orders' ||
       activeSection === 'purchases' ||
       activeSection === 'stock') &&
     isPrimaryActionDisabled
@@ -261,6 +291,20 @@ export function App() {
     if (activeSection === 'cutTypes') {
       if (session.organization.capabilities.canWriteProducts) {
         setCutTypeCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'customers') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setCustomerCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'orders') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setOrderCreateRequestId((current) => current + 1)
       }
       return
     }
