@@ -1,5 +1,89 @@
 # Functional Readiness Plan
 
+## Misión 6.2 - Producción: recetas y transformación de materia prima en producto terminado
+
+Recetas por producto terminado y producciones que consumen materia prima y suman terminado, con movimientos en el ledger inmutable de 6.1 y costo promedio ponderado. Reemplaza el placeholder de Producción.
+
+### Fase 0 - Preparación
+
+- Rama `sebag97-mvp-inicial` limpia. `pg_dump -Fc` de la base local fuera del repo (`~/gastronexo-backups/pre-mision-6.2-20261005-152244.dump`, 105 KB) antes de migrar.
+
+### Fase 1 - Auditoría (antes de escribir código)
+
+1. **Costo:** vive en `products.cost NUMERIC(12,2)`, uno por producto (no por depósito). Compras lo recalcula como `(cantidad_global_antes × costo + total_entrante) / cantidad_global_después`, con cantidad global = `SUM(inventory_balances.quantity)` en todos los depósitos (incluye lo reservado). Redondea a 2 decimales y bloquea la fila del producto con `FOR UPDATE`. Las salidas (ventas) no tocan el costo.
+2. **Ledger:** todas las escrituras pasan por `recordMovement()` (`stock-ledger.ts`). `movement_type ∈ {purchase, adjustment, sale}` y `source_type ∈ {purchase, adjustment, order_delivery}`, con CHECK de signo por tipo y de correspondencia 1:1 tipo↔origen. Hay un único `(source_type, source_id, warehouse_id, product_id)` y un trigger contra UPDATE/DELETE/TRUNCATE.
+3. **`product_type`:** CHECK `raw_material|finished_product`. Compras solo acepta `raw_material` activo. Pedidos no miran el tipo (solo `is_sellable` + precio). Hasta 6.1, un terminado solo recibía stock por ajuste manual. `PATCH /products` permite cambiar el tipo libremente.
+4. **Bloqueos:** `lockBalances()` hace `SELECT … FOR UPDATE ORDER BY product_id` y solo bloquea filas existentes (un balance inexistente cuenta como disponible 0). Compras bloquea balance → producto, producto por producto en orden. La numeración usa una tabla de secuencia por organización con upsert (`order_number_sequences`).
+5. **Contradicciones con el plan y cómo se resolvieron:**
+   - Los CHECK atan `movement_type` a `source_type`, así que nuevos `source_type` solos no alcanzan. Se agregó `movement_type = 'production'`.
+   - La anulación no puede reutilizar el `source_type` del movimiento original con el mismo `source_id` (índice único). Se agregó un tercer origen, `production_void`.
+   - El tipo de un producto puede cambiar después de cargar la receta. Producción y vista previa revalidan en el momento (400 `invalid_recipe` / `invalid_product`). Productos no se tocó.
+   - El plan no definía el costo al anular. El terminado revierte el promedio ponderado (piso 0) y la materia prima vuelve al costo del snapshot, como una compra a ese costo.
+
+### Fase 2 - Migración `008_recipes_and_production.sql`
+
+| Elemento | Detalle |
+| --- | --- |
+| `recipes` | `product_id` (FK compuesta con organización), `yield_quantity > 0`, `is_active`, `notes`, `created_by`/`updated_by`, fechas. Índice único parcial `(organization_id, product_id) WHERE is_active`: una receta activa por producto; las inactivas quedan como historial. |
+| `recipe_items` | `ingredient_product_id` (FK compuesta), `quantity > 0`, único `(recipe_id, ingredient_product_id)`. |
+| `production_runs` | `run_number` (`PROD-000001`, único por organización, vía `production_run_sequences`), producto, receta, depósito, `quantity_produced > 0`, `unit_cost NUMERIC(14,4)`, `total_cost`, `status completed|voided` (CHECK de coherencia con `voided_at`/`voided_by`), snapshots de nombre, unidad y rendimiento, notas, `void_reason`. |
+| `production_run_items` | Snapshot de lo consumido: producto, nombre, unidad, cantidad, costo unitario, subtotal. Inmutable (trigger `reject_immutable_row_mutation`). |
+| Ledger | `movement_type` suma `production`. `source_type` suma `production_consumption` (delta < 0), `production_output` (> 0) y `production_void` (≠ 0), con `source_id = production_run_id`. Los CHECK se recrean y el trigger de inmutabilidad de 6.1 sigue igual. |
+| Idempotencia | `IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP … IF EXISTS` + `ADD`. Se re-ejecutó el SQL completo sobre la base ya migrada sin errores, y los 23 movimientos existentes validan contra los CHECK nuevos. |
+
+### Fase 3 - Backend (`modules/production/`)
+
+- **`/api/recipes`**: `GET` (filtros `status`, `q`, paginado), `GET /:id`, `POST`, `PATCH /:id` (rendimiento, notas, reemplazo de ítems), `PATCH /:id/status`. Valida terminado activo, ingredientes materia prima activa de la organización, cantidades > 0 y sin repetidos (400). Otra organización → 404. Segunda receta activa → 409 `active_recipe_exists`.
+- **`/api/production-runs`**: `GET` (filtros `status`, `productId`, `warehouseId`, `from`, `to`, `q`, paginado), `GET /:id`, `POST`, `POST /preview`, `POST /:id/void`.
+- **Una sola función de cálculo** (`planProduction`) para la vista previa y el registro: factor = cantidad / rendimiento, consumo redondeado a 3 decimales, subtotal = consumo × costo vigente, costo unitario = total / cantidad y costo resultante ponderado. La vista previa la usa sin bloqueos ni escrituras. El registro la usa con `FOR UPDATE`, así que no pueden divergir.
+- **Registrar** (una transacción): asegura que exista el balance del terminado (ver Concurrencia), bloquea balances de ingredientes + terminado en orden, luego la fila de costo del terminado. Valida disponible (cantidad − reservado). Si falta: `409 insufficient_stock` con `shortages[{ productName, unit, requested, available, missing }]`, el mismo formato que Pedidos, sin efectos. Si alcanza: numera, crea la corrida, descuenta cada ingrediente con su movimiento `production_consumption` y `balance_after`, guarda el snapshot, suma el terminado (`production_output`) y actualiza `products.cost`.
+- **Anular:** bloquea la corrida (`FOR UPDATE`; segunda anulación → 409 `already_voided`) y los balances. Exige terminado disponible ≥ producido (`409 output_not_available` con disponible). Escribe movimientos inversos `production_void`, revierte costos y marca `voided`.
+- `GET /api/inventory/movements` acepta `movementType=production` y `sourceReference` devuelve el número de producción.
+- Permisos: lectura (incluida la vista previa) `owner|admin|operator|viewer`; escritura `owner|admin|operator`.
+
+### Fase 4 - Frontend
+
+- **Producción** (`features/production/ProductionView.tsx`), con tres zonas:
+  - **Producciones:** historial con búsqueda (número/producto), estado y paginado. El detalle muestra el snapshot de ingredientes, costos, usuario y anulación. "Anular producción" pide confirmación inline con motivo opcional (sin `window.confirm`).
+  - **Formulario de producción** (acción primaria "Nueva producción" o "Producir" desde una receta): producto con receta activa, depósito y cantidad. La vista previa viene del endpoint (debounce 350 ms, descarta respuestas viejas): necesario, disponible, estado ("Alcanza" / "Faltan X"), costo unitario, subtotal, costo total, costo por unidad y costo promedio actual → resultante. "Confirmar producción" queda deshabilitado con el motivo visible si falta materia prima. Un 409 por carrera se muestra con el mismo aviso de faltantes.
+  - **Recetas:** listado con estado y búsqueda, alta/edición (terminado, rendimiento, notas, ingredientes con unidad, marca de "Ingrediente repetido"), activar/inactivar y detalle con costo vigente de cada ingrediente.
+- **Stock:** los movimientos de producción se ven como "Producción · consumo / salida / anulada", con el número `PROD-…` como origen, y el filtro "Tipo" suma "Producción".
+- Viewer: "Solo lectura" en ambos paneles, acción primaria deshabilitada, sin anular/editar/producir. Estados cargando/vacío/error con "Reintentar" (`LoadErrorState`) y tablas dentro de `TableScroll`.
+
+### Verificación
+
+- `npm run db:migrate` (aplicó 008), `backend npm run build` y `frontend npm run build` sin errores (JS 289 kB / 77 kB gzip). `/health` y `/ready` → 200.
+- **E2E vía API contra PostgreSQL** (script fuera del repo). Números calculados antes de ejecutar:
+
+| Paso | Esperado | Resultado |
+| --- | --- | --- |
+| Compra 100 kg papa cruda a 5.000 | q=100, costo 5.000 | OK |
+| Receta "Papa pelada" rinde 8 kg con 10 kg de papa; vista previa de 16 kg | consume 20 kg, total 100.000, unitario 6.250, resultante 6.250; sin escribir nada | OK |
+| Producir 16 kg (`PROD-000001`) | papa 80, papa pelada 16 a 6.250; movimientos −20 (saldo 80) y +16 (saldo 16) con referencia `PROD-000001` | OK |
+| Compra 40 kg a 6.000 | papa 120, costo (80×5.000 + 240.000)/120 = 5.333,33 | OK |
+| Producir 8 kg (`PROD-000002`) | 10 kg × 5.333,33 = 53.333,30; unitario 6.666,6625; papa pelada (16×6.250 + 53.333,30)/24 = **6.388,89**; el costo de la papa no cambia | OK |
+| Salsa criolla (rinde 5: cebolla 4 + aceite 0,5), producir 2,5 kg | cebolla 2 (8.000) + aceite 0,25 (5.000) = 13.000, unitario 5.200 | OK |
+| Salsa 15 kg con 8 kg de cebolla | 409, solo cebolla: necesario 12, disponible 8, faltan 4; balances, movimientos, corridas y costos idénticos | OK |
+| Pedido 10 kg de papa pelada → confirmar → entregar | reserva 10 (q 24, d 14) → q 14; Ventas 150.000 | OK |
+| Anular `PROD-000001` con 5 kg reservados por otro pedido | 409 `output_not_available`, disponible 9 < 16, sin cambios | OK |
+| Anular `PROD-000002` | papa pelada 14 → 6, costo (14×6.388,89 − 53.333,30)/6 = **6.018,53**; papa 110 → 120, costo 5.333,33; 2 movimientos `production_void` | OK |
+| Editar la receta después de producir | el snapshot de la corrida no cambia | OK |
+
+- **Negativos:** materia prima insuficiente (409 sin parciales), ingrediente terminado (400), receta de una materia prima (400), ingrediente duplicado al crear y al editar (400), rendimiento 0 / cantidad negativa (400), segunda receta activa (409), producto sin receta activa o con receta inactiva (400 `recipe_required`), producir una materia prima (400), depósito de otra organización (404), producto/receta/corrida de otra organización (404, también al editar y anular), cantidad 0 o negativa (400), viewer crea receta / produce / anula (403) y lee recetas, producciones y vista previa (200), UPDATE/DELETE sobre `inventory_movements` y `production_run_items` (rechazados por trigger), anular con terminado vendido/reservado (409), anular dos veces (409).
+- **Concurrencia:** 10 producciones simultáneas de 7 kg con 50 kg de harina → 7 × 201 y 3 × 409; harina 1, masa 49, números `PROD-…` sin duplicados. La misma anulación dos veces en paralelo → 200 + 409. **Hallazgo y corrección:** en una segunda corrida aparecieron 2 × 500 por *deadlock*. Cuando el terminado todavía no tenía balance, la primera transacción lo creaba a mitad de camino y las siguientes lo bloqueaban en otro orden que las que ya esperaban. El stock no quedó inconsistente, pero la respuesta era 500. Ahora el registro inserta el balance del terminado con cantidad 0 (`ON CONFLICT DO NOTHING`) **antes** de bloquear; si la producción falla, el rollback lo descarta. Se sumó una prueba de estrés: 5 rondas × 10 producciones paralelas, cada una con un terminado nuevo sin balance (100 kg / 3 kg → 33 × 201, 17 × 409, 0 × 500, azúcar 1) y 0 *deadlocks* en el log de PostgreSQL. **Segundo hallazgo y corrección:** al re-ejecutar, la API quedó colgada (sin responder ni `/ready`), con las 10 conexiones del pool `idle` después de `COMMIT`. Era agotamiento del pool en Node: cada handler releía la corrida o receta con `pool.query` **antes** de liberar su `client`, así que con ≥ 10 requests concurrentes todos retenían una conexión esperando otra. Ahora esas lecturas usan el mismo `client` (commit `5758ab1`). Resultado final: **3 corridas seguidas de 79/79 OK** (escenario completo + estrés), 0 *deadlocks* y 0 respuestas 500.
+- **Compatibilidad:** compras (201, costo ponderado igual), ajustes (201), `GET /api/inventory/adjustments`, filtro de movimientos `sale`, flujo de pedidos con reserva/entrega y Ventas sin cambios. **Consistencia global:** suma de movimientos = `quantity` en todos los balances de la base y sin stock negativo.
+- **UI (Playwright 1.55, Chromium) - 38/38 OK** con la org `Restaurante Demo 6.2`: historial con 5 producciones (una anulada); detalle con snapshot; alta de receta por UI (el duplicado se marca y se rechaza); formulario con faltante (Milanesa 10 kg: "Faltan 6,3 kg" de carne, confirmar deshabilitado con motivo); vista previa de 1 kg = Gs. 51.900 (1,1×45.000 + 2×900 + 0,2×3.000); producción `PROD-000006` registrada y anulada por UI; Stock con etiquetas de producción y sin UUID. Sin scroll horizontal de página a 1440/1024/390 (Producción, detalle, formulario con faltante, formulario de receta, Stock), sin errores de consola, sin diálogos nativos y sin emails en pantalla. Viewer: sin botones de escritura y acción primaria deshabilitada.
+- **Screenshots** en `docs/visual-qa/6.2/` (10 PNG, 0,7 MB): `produccion-historial-1440/390`, `produccion-recetas-1440`, `produccion-form-error-1440/390`, `produccion-detalle-1440`, `stock-movimientos-produccion-1440/390`, `viewer-produccion-1440`, `viewer-stock-1440`.
+
+### Estado y pendientes
+
+- Anulación incluida en esta misión (no hizo falta 6.2b).
+- El formulario de producción toma por defecto el primer depósito activo (orden alfabético), igual que Compras. Si hay varios depósitos conviene revisarlo antes de confirmar; la vista previa muestra el depósito elegido.
+- A 390 px, las columnas de costo de la vista previa quedan a la derecha del scroll de la tabla (mismo patrón que el resto). El total, el costo por unidad y el costo resultante se ven debajo, sin scroll.
+- `PATCH /products` sigue permitiendo cambiar el tipo de un producto usado en recetas. La producción lo detecta y bloquea (400); se podría impedir en Productos si molesta.
+- **Riesgo preexistente detectado (no corregido, fuera de alcance):** Pedidos (`POST /`, `PATCH /:id`, `PATCH /:id/status`) y Compras (`POST /`) también releen con `pool.query` antes de liberar el `client`. Con 10 o más requests concurrentes de escritura pueden colgar la API igual que Producción. La corrección es la misma: usar `client` en `getOrderById`/`getPurchaseById` dentro de la transacción. Además, Compras con varias filas de balance creadas a mitad de transacción podría tener el mismo patrón de *deadlock*. Recomendado como hallazgo prioritario para la próxima misión.
+- Fuera de alcance (sin cambios): mermas (6.3, incluida la merma de producción real vs. teórica), lotes y vencimientos, subrecetas, conversiones de unidad, mano de obra/indirectos, producción automática por pedido, ecommerce público, mojibake, H7/H8/H9.
+
 ## Misión 6.1 - Stock real: movimientos inmutables, reserva y descuento por pedidos
 
 Conecta Pedidos con Inventario. Todo cambio de stock (compras, ajustes, ventas) queda en un ledger inmutable. Confirmar un pedido reserva stock, entregarlo lo descuenta y cancelarlo libera la reserva.

@@ -1,5 +1,18 @@
 # Client Requirements Log
 
+## Estado actual (Mision 6.2)
+
+- **Recetas:** cada producto terminado puede tener una receta activa. La receta indica cuánto rinde (por ejemplo, 8 kg de papa pelada) y cuánta materia prima consume para ese rendimiento (10 kg de papa cruda). Solo materias primas activas como ingredientes, sin repetir. Las recetas se editan y se activan/inactivan; una inactiva no permite producir.
+- **Producción:** se elige producto, cantidad y depósito. El sistema escala la receta (producir 16 kg consume 20 kg de papa), descuenta la materia prima, suma el terminado y numera la producción (`PROD-000001`).
+- **Vista previa obligatoria:** antes de confirmar se ve, por ingrediente, lo necesario, lo disponible y lo que falta, más el costo total, el costo por unidad y cómo queda el costo promedio del terminado. Si falta materia prima, no se puede confirmar y se indica qué falta. Solo cuenta el stock disponible (lo reservado por pedidos no se usa).
+- **Costo:** el costo del terminado se recalcula por promedio ponderado, igual que en Compras. Solo materia prima: sin mano de obra ni costos indirectos. Consumir materia prima no cambia su costo.
+- **Historial:** cada producción guarda lo que consumió y a qué costo. Editar la receta o cambiar costos después no altera producciones pasadas.
+- **Anular una producción:** devuelve la materia prima y descuenta el terminado con movimientos nuevos (el historial de stock no se borra). Solo es posible si lo producido sigue disponible, es decir, sin reservar ni vender. No se puede anular dos veces.
+- **Stock:** los movimientos de producción aparecen como "Producción · consumo", "Producción · salida" o "Producción anulada", con el número de producción como referencia.
+- **Unidades:** cada producto usa una sola unidad. Los ingredientes se cargan en la unidad de la materia prima (sin conversión kg↔g).
+- El rol de solo lectura (viewer) ve recetas, producciones y detalles, pero no puede crear, editar ni anular.
+- Fuera de alcance: mermas (incluida la merma de producción real vs. teórica), lotes y vencimientos, subrecetas, conversiones de unidad, mano de obra/costos indirectos, producción automática por pedido, ecommerce público.
+
 ## Estado actual (Mision 6.1)
 
 - Pedidos e inventario quedan conectados:
@@ -15,7 +28,7 @@
 - Una "venta" es un pedido entregado. El módulo Ventas es de solo lectura (listado y total del período); no hay ventas manuales, pagos ni facturación.
 - El Dashboard muestra la facturación del mes (suma de pedidos entregados). Mermas y alertas siguen sin datos.
 - Los pedidos entregados antes de esta misión no descontaron stock y no se recalcularon. Un pedido confirmado antes de esta misión debe elegir depósito para seguir avanzando.
-- Fuera de alcance: producción (materia prima → elaborado), mermas, lotes/vencimientos, mínimos y alertas, transferencias entre depósitos, pedidos multi-depósito, pagos/facturación, ecommerce público.
+- Fuera de alcance: producción (materia prima → elaborado; cubierta en 6.2), mermas, lotes/vencimientos, mínimos y alertas, transferencias entre depósitos, pedidos multi-depósito, pagos/facturación, ecommerce público.
 
 ## Estado actual (Mision 5.2)
 
