@@ -25,12 +25,32 @@ const movementTypeLabelByKey: Record<InventoryMovementType, string> = {
   purchase: 'Compra',
   adjustment: 'Ajuste',
   sale: 'Venta',
+  production: 'Producción',
 }
 
 const movementToneByKey: Record<InventoryMovementType, 'success' | 'warning' | 'danger'> = {
   purchase: 'success',
   adjustment: 'warning',
   sale: 'danger',
+  production: 'success',
+}
+
+// Una produccion genera consumo (materia prima), salida (terminado) y, si se anula, movimientos inversos.
+const productionSourceDisplay: Partial<
+  Record<InventoryMovement['sourceType'], { label: string; tone: 'success' | 'warning' | 'danger' }>
+> = {
+  production_consumption: { label: 'Producción · consumo', tone: 'warning' },
+  production_output: { label: 'Producción · salida', tone: 'success' },
+  production_void: { label: 'Producción anulada', tone: 'danger' },
+}
+
+function getMovementDisplay(movement: InventoryMovement) {
+  return (
+    productionSourceDisplay[movement.sourceType] ?? {
+      label: movementTypeLabelByKey[movement.movementType],
+      tone: movementToneByKey[movement.movementType],
+    }
+  )
 }
 
 const integerQuantityFormatter = new Intl.NumberFormat('es-PY', {
@@ -815,6 +835,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               <option value="purchase">Compra</option>
               <option value="adjustment">Ajuste</option>
               <option value="sale">Venta</option>
+              <option value="production">Producción</option>
             </select>
           </label>
           <label className="field stock-history__filter">
@@ -871,8 +892,8 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
                     <td>{new Date(movement.createdAt).toLocaleString('es-PY')}</td>
                     <td>{movement.productName}</td>
                     <td>
-                      <StatusBadge tone={movementToneByKey[movement.movementType]}>
-                        {movementTypeLabelByKey[movement.movementType]}
+                      <StatusBadge tone={getMovementDisplay(movement).tone}>
+                        {getMovementDisplay(movement).label}
                       </StatusBadge>
                     </td>
                     <td className="numeric-cell">{formatDelta(movement.quantityDelta, movement.unit)}</td>

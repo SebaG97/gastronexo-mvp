@@ -215,7 +215,7 @@ export type InventoryBalance = {
   updatedAt: string | null
 }
 
-export type InventoryMovementType = 'purchase' | 'adjustment' | 'sale'
+export type InventoryMovementType = 'purchase' | 'adjustment' | 'sale' | 'production'
 
 export type InventoryMovement = {
   id: string
@@ -228,7 +228,13 @@ export type InventoryMovement = {
   movementType: InventoryMovementType
   quantityDelta: string
   balanceAfter: string
-  sourceType: 'purchase' | 'adjustment' | 'order_delivery'
+  sourceType:
+    | 'purchase'
+    | 'adjustment'
+    | 'order_delivery'
+    | 'production_consumption'
+    | 'production_output'
+    | 'production_void'
   sourceId: string
   sourceReference: string | null
   createdBy: string
@@ -600,6 +606,144 @@ export type PurchaseMutationInput = {
     quantity: number
     unitCost: number
   }>
+}
+
+export type RecipesStatusFilter = 'active' | 'inactive' | 'all'
+
+export type Recipe = {
+  id: string
+  productId: string
+  productName: string
+  productUnit: ProductUnit
+  yieldQuantity: string
+  isActive: boolean
+  notes: string | null
+  itemCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RecipeItem = {
+  id: string
+  ingredientProductId: string
+  productName: string
+  unit: ProductUnit
+  productType: ProductType
+  isActive: boolean
+  unitCost: string
+  quantity: string
+}
+
+export type RecipeDetail = Omit<Recipe, 'itemCount'> & {
+  productCost: string
+  productIsActive: boolean
+  createdByUserName: string
+  updatedByUserName: string
+  items: RecipeItem[]
+}
+
+export type RecipesListResponse = {
+  recipes: Recipe[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type RecipeMutationInput = {
+  productId: string
+  yieldQuantity: number
+  notes?: string | null
+  items: Array<{ ingredientProductId: string; quantity: number }>
+}
+
+export type ProductionRunStatus = 'completed' | 'voided'
+
+export type ProductionRun = {
+  id: string
+  runNumber: string
+  productId: string
+  productName: string
+  productUnit: ProductUnit
+  recipeId: string
+  recipeYieldQuantity: string
+  warehouseId: string
+  warehouseName: string
+  quantityProduced: string
+  unitCost: string
+  totalCost: string
+  status: ProductionRunStatus
+  notes: string | null
+  createdByUserName: string
+  createdAt: string
+  voidedAt: string | null
+  voidedByUserName: string | null
+  voidReason: string | null
+}
+
+export type ProductionRunDetail = ProductionRun & {
+  items: Array<{
+    id: string
+    productId: string
+    productName: string
+    unit: ProductUnit
+    quantity: string
+    unitCost: string
+    subtotal: string
+  }>
+}
+
+export type ProductionRunsListRequest = {
+  status?: ProductionRunStatus | 'all'
+  q?: string
+  page?: number
+  pageSize?: number
+}
+
+export type ProductionRunsListResponse = {
+  productionRuns: ProductionRun[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
+}
+
+export type ProductionInput = {
+  productId: string
+  warehouseId: string
+  quantity: number
+}
+
+export type ProductionPreview = {
+  productId: string
+  productName: string
+  productUnit: ProductUnit
+  recipeYieldQuantity: string
+  warehouseName: string
+  quantity: string
+  ingredients: Array<{
+    productId: string
+    productName: string
+    unit: ProductUnit
+    recipeQuantity: string
+    required: string
+    available: string
+    missing: string
+    isSufficient: boolean
+    unitCost: string
+    subtotal: string
+  }>
+  totalCost: string
+  unitCost: string
+  currentCost: string
+  currentStock: string
+  resultingCost: string
+  canProduce: boolean
+  shortages: StockShortage[]
 }
 
 export class ApiError extends Error {
@@ -1205,6 +1349,113 @@ export async function createPurchase(input: PurchaseMutationInput, token: string
       method: 'POST',
       body: JSON.stringify(input),
     },
+    token,
+  )
+}
+
+export async function getRecipes(
+  query: { status?: RecipesStatusFilter; q?: string; page?: number; pageSize?: number },
+  token: string,
+) {
+  const searchParams = new URLSearchParams()
+
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<RecipesListResponse>(`/api/recipes${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getRecipeById(recipeId: string, token: string) {
+  return apiRequest<{ recipe: RecipeDetail }>(`/api/recipes/${recipeId}`, { method: 'GET' }, token)
+}
+
+export async function createRecipe(input: RecipeMutationInput, token: string) {
+  return apiRequest<{ recipe: RecipeDetail }>(
+    '/api/recipes',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function updateRecipe(
+  recipeId: string,
+  input: Partial<Omit<RecipeMutationInput, 'productId'>>,
+  token: string,
+) {
+  return apiRequest<{ recipe: RecipeDetail }>(
+    `/api/recipes/${recipeId}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function updateRecipeStatus(recipeId: string, isActive: boolean, token: string) {
+  return apiRequest<{ recipe: RecipeDetail }>(
+    `/api/recipes/${recipeId}/status`,
+    { method: 'PATCH', body: JSON.stringify({ isActive }) },
+    token,
+  )
+}
+
+export async function getProductionRuns(query: ProductionRunsListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.status) {
+    searchParams.set('status', query.status)
+  }
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<ProductionRunsListResponse>(`/api/production-runs${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getProductionRunById(runId: string, token: string) {
+  return apiRequest<{ productionRun: ProductionRunDetail }>(
+    `/api/production-runs/${runId}`,
+    { method: 'GET' },
+    token,
+  )
+}
+
+export async function previewProductionRun(input: ProductionInput, token: string) {
+  return apiRequest<{ preview: ProductionPreview }>(
+    '/api/production-runs/preview',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function createProductionRun(input: ProductionInput & { notes?: string | null }, token: string) {
+  return apiRequest<{ productionRun: ProductionRunDetail; resultingCost: string }>(
+    '/api/production-runs',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function voidProductionRun(runId: string, reason: string | null, token: string) {
+  return apiRequest<{ productionRun: ProductionRunDetail }>(
+    `/api/production-runs/${runId}/void`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
     token,
   )
 }

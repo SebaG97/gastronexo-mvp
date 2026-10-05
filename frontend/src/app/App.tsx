@@ -45,6 +45,7 @@ const sectionsWithPrimaryAction: AppSection[] = [
   'customers',
   'orders',
   'purchases',
+  'production',
   'sales',
   'stock',
 ]
@@ -64,6 +65,7 @@ export function App() {
   const [customerCreateRequestId, setCustomerCreateRequestId] = useState(0)
   const [orderCreateRequestId, setOrderCreateRequestId] = useState(0)
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
+  const [productionCreateRequestId, setProductionCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
 
   const canManageMembers =
@@ -123,7 +125,15 @@ export function App() {
       ) : (
         <></>
       ),
-      production: <ProductionView />,
+      production: session ? (
+        <ProductionView
+          token={session.token}
+          canWriteProduction={canWriteProducts}
+          createRequestId={productionCreateRequestId}
+        />
+      ) : (
+        <></>
+      ),
       waste: <WasteView />,
       sales: session ? <SalesView token={session.token} /> : <></>,
       stock: session ? (
@@ -145,6 +155,7 @@ export function App() {
     cutTypeCreateRequestId,
     orderCreateRequestId,
     productCreateRequestId,
+    productionCreateRequestId,
     purchaseCreateRequestId,
     session,
     stockAdjustRequestId,
@@ -239,6 +250,7 @@ export function App() {
       setCustomerCreateRequestId(0)
       setOrderCreateRequestId(0)
       setPurchaseCreateRequestId(0)
+      setProductionCreateRequestId(0)
       setStockAdjustRequestId(0)
       setSession({
         token: switchResponse.token,
@@ -322,6 +334,13 @@ export function App() {
     if (activeSection === 'purchases') {
       if (session.organization.capabilities.canWriteProducts) {
         setPurchaseCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'production') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setProductionCreateRequestId((current) => current + 1)
       }
       return
     }
