@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
+import { recordMovement } from './stock-ledger.js'
 
 const productTypeSchema = z.enum(['raw_material', 'finished_product'])
 
@@ -23,6 +24,16 @@ const createInventoryAdjustmentSchema = z.object({
 const listInventoryAdjustmentsQuerySchema = z.object({
   warehouseId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+const listInventoryMovementsQuerySchema = z.object({
+  warehouseId: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+  movementType: z.enum(['purchase', 'adjustment', 'sale']).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -120,6 +131,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
              w.id AS "warehouseId",
              w.name AS "warehouseName",
              COALESCE(ib.quantity, 0)::text AS quantity,
+             COALESCE(ib.reserved_quantity, 0)::text AS "reservedQuantity",
+             (COALESCE(ib.quantity, 0) - COALESCE(ib.reserved_quantity, 0))::text AS "availableQuantity",
              ib.updated_at AS "updatedAt"
            FROM products p
            CROSS JOIN warehouses w
@@ -203,6 +216,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
            w.id AS "warehouseId",
            w.name AS "warehouseName",
            ib.quantity::text AS quantity,
+           ib.reserved_quantity::text AS "reservedQuantity",
+           (ib.quantity - ib.reserved_quantity)::text AS "availableQuantity",
            ib.updated_at AS "updatedAt"
          FROM inventory_balances ib
          JOIN products p
@@ -270,8 +285,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(404).send({ message: 'Recurso no encontrado.' })
         }
 
-        const balanceResult = await client.query<{ id: string; quantity: string }>(
-          `SELECT id, quantity::text AS quantity
+        const balanceResult = await client.query<{ id: string; quantity: string; reservedQuantity: string }>(
+          `SELECT id, quantity::text AS quantity, reserved_quantity::text AS "reservedQuantity"
            FROM inventory_balances
            WHERE organization_id = $1
              AND warehouse_id = $2
@@ -282,7 +297,16 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
 
         const currentBalance = balanceResult.rows[0]
         const previousQuantity = Number(currentBalance?.quantity ?? '0')
-        const delta = input.newQuantity - previousQuantity
+        const reservedQuantity = Number(currentBalance?.reservedQuantity ?? '0')
+        const delta = Number((input.newQuantity - previousQuantity).toFixed(3))
+
+        if (input.newQuantity < reservedQuantity) {
+          await rollbackTransaction(client)
+          return reply.code(409).send({
+            message: `No se puede ajustar por debajo de lo reservado por pedidos (${reservedQuantity}).`,
+            reservedQuantity: reservedQuantity.toFixed(3),
+          })
+        }
 
         const upsertBalanceResult = await client.query(
           `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
@@ -335,6 +359,18 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
             userId,
           ],
         )
+
+        await recordMovement(client, {
+          organizationId,
+          warehouseId: input.warehouseId,
+          productId: input.productId,
+          movementType: 'adjustment',
+          quantityDelta: delta,
+          balanceAfter: input.newQuantity,
+          sourceType: 'adjustment',
+          sourceId: adjustmentResult.rows[0].id,
+          createdBy: userId,
+        })
 
         await client.query('COMMIT')
 
@@ -467,6 +503,146 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
           page,
           pageSize,
           totalPages,
+        },
+      }
+    },
+  )
+
+  app.get(
+    '/movements',
+    { preHandler: requireOrganizationRole('owner', 'admin', 'operator', 'viewer') },
+    async (request, reply) => {
+      const query = listInventoryMovementsQuerySchema.parse(request.query)
+      const organizationId = request.organizationAccess!.organization.id
+      const page = query.page
+      const pageSize = query.pageSize
+
+      const whereClauses = ['im.organization_id = $1']
+      const params: Array<string | number | Date> = [organizationId]
+
+      if (query.warehouseId) {
+        const warehouseResult = await pool.query<{ id: string }>(
+          `SELECT id
+           FROM warehouses
+           WHERE organization_id = $1
+             AND id = $2
+           LIMIT 1`,
+          [organizationId, query.warehouseId],
+        )
+
+        if (!warehouseResult.rows[0]) {
+          return reply.code(404).send({ message: 'Depósito no encontrado.' })
+        }
+
+        params.push(query.warehouseId)
+        whereClauses.push(`im.warehouse_id = $${params.length}`)
+      }
+
+      if (query.productId) {
+        const productResult = await pool.query<{ id: string }>(
+          `SELECT id
+           FROM products
+           WHERE organization_id = $1
+             AND id = $2
+           LIMIT 1`,
+          [organizationId, query.productId],
+        )
+
+        if (!productResult.rows[0]) {
+          return reply.code(404).send({ message: 'Producto no encontrado.' })
+        }
+
+        params.push(query.productId)
+        whereClauses.push(`im.product_id = $${params.length}`)
+      }
+
+      if (query.movementType) {
+        params.push(query.movementType)
+        whereClauses.push(`im.movement_type = $${params.length}`)
+      }
+
+      if (query.from) {
+        params.push(query.from)
+        whereClauses.push(`im.created_at >= $${params.length}`)
+      }
+
+      if (query.to) {
+        params.push(query.to)
+        whereClauses.push(`im.created_at <= $${params.length}`)
+      }
+
+      const whereSql = `WHERE ${whereClauses.join(' AND ')}`
+
+      const totalResult = await pool.query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total
+         FROM inventory_movements im
+         ${whereSql}`,
+        params,
+      )
+
+      const total = Number(totalResult.rows[0]?.total ?? 0)
+      const offset = (page - 1) * pageSize
+      const listParams = [...params, pageSize, offset]
+      const limitPlaceholder = `$${listParams.length - 1}`
+      const offsetPlaceholder = `$${listParams.length}`
+
+      const result = await pool.query(
+        `SELECT
+           im.id,
+           im.warehouse_id AS "warehouseId",
+           w.name AS "warehouseName",
+           im.product_id AS "productId",
+           p.name AS "productName",
+           p.product_type AS "productType",
+           p.unit,
+           im.movement_type AS "movementType",
+           im.quantity_delta::text AS "quantityDelta",
+           im.balance_after::text AS "balanceAfter",
+           im.source_type AS "sourceType",
+           im.source_id AS "sourceId",
+           CASE im.source_type
+             WHEN 'purchase' THEN po.invoice_number
+             WHEN 'order_delivery' THEN o.order_number
+             ELSE ia.reason
+           END AS "sourceReference",
+           im.created_by AS "createdBy",
+           u.full_name AS "createdByUserName",
+           im.created_at AS "createdAt"
+         FROM inventory_movements im
+         JOIN warehouses w
+           ON w.id = im.warehouse_id
+          AND w.organization_id = im.organization_id
+         JOIN products p
+           ON p.id = im.product_id
+          AND p.organization_id = im.organization_id
+         JOIN users u
+           ON u.id = im.created_by
+         LEFT JOIN purchase_orders po
+           ON im.source_type = 'purchase'
+          AND po.id = im.source_id
+          AND po.organization_id = im.organization_id
+         LEFT JOIN orders o
+           ON im.source_type = 'order_delivery'
+          AND o.id = im.source_id
+          AND o.organization_id = im.organization_id
+         LEFT JOIN inventory_adjustments ia
+           ON im.source_type = 'adjustment'
+          AND ia.id = im.source_id
+          AND ia.organization_id = im.organization_id
+         ${whereSql}
+         ORDER BY im.created_at DESC, im.id DESC
+         LIMIT ${limitPlaceholder}
+         OFFSET ${offsetPlaceholder}`,
+        listParams,
+      )
+
+      return {
+        movements: result.rows,
+        pagination: {
+          total,
+          page,
+          pageSize,
+          totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
         },
       }
     },

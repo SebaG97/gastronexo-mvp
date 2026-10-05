@@ -2,6 +2,14 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
+import {
+  aggregateByProduct,
+  consumeReservedStock,
+  lockBalances,
+  releaseStock,
+  reserveStock,
+  type StockShortage,
+} from '../inventory/stock-ledger.js'
 
 const orderStatuses = ['new', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'] as const
 type OrderStatus = (typeof orderStatuses)[number]
@@ -57,7 +65,11 @@ const updateOrderSchema = z
 
 const updateOrderStatusSchema = z.object({
   status: z.enum(orderStatuses),
+  warehouseId: z.string().uuid().optional(),
 })
+
+// Estados en los que el pedido mantiene stock reservado en su deposito.
+const reservedStatuses: OrderStatus[] = ['confirmed', 'preparing', 'ready']
 
 type DbClient = Pick<typeof pool, 'query'>
 
@@ -305,6 +317,59 @@ async function replaceOrderItems(
   return prepared
 }
 
+async function getOrderStockRequirements(client: DbClient, organizationId: string, orderId: string) {
+  const result = await client.query<{ productId: string; quantity: string }>(
+    `SELECT product_id AS "productId", quantity::text AS quantity
+     FROM order_items
+     WHERE organization_id = $1
+       AND order_id = $2`,
+    [organizationId, orderId],
+  )
+
+  return aggregateByProduct(result.rows)
+}
+
+async function findWarehouseForOrder(client: DbClient, organizationId: string, warehouseId: string) {
+  const result = await client.query<{ id: string; name: string; isActive: boolean }>(
+    `SELECT id, name, is_active AS "isActive"
+     FROM warehouses
+     WHERE organization_id = $1
+       AND id = $2
+     LIMIT 1`,
+    [organizationId, warehouseId],
+  )
+
+  const warehouse = result.rows[0]
+  if (!warehouse) {
+    return { ok: false as const, statusCode: 404, message: 'Depósito no encontrado.' }
+  }
+
+  if (!warehouse.isActive) {
+    return { ok: false as const, statusCode: 400, message: 'No se puede reservar stock en un depósito inactivo.' }
+  }
+
+  return { ok: true as const, warehouse }
+}
+
+async function getWarehouseName(client: DbClient, organizationId: string, warehouseId: string) {
+  const result = await client.query<{ name: string }>(
+    'SELECT name FROM warehouses WHERE organization_id = $1 AND id = $2',
+    [organizationId, warehouseId],
+  )
+
+  return result.rows[0]?.name ?? ''
+}
+
+function insufficientStockBody(warehouseId: string, warehouseName: string, shortages: StockShortage[]) {
+  return {
+    message: `Stock insuficiente en ${warehouseName} para ${shortages.length === 1 ? 'un producto' : `${shortages.length} productos`} del pedido.`,
+    code: 'insufficient_stock',
+    warehouseId,
+    warehouseName,
+    shortages,
+  }
+}
+
 async function getOrderById(client: DbClient, organizationId: string, orderId: string) {
   const orderResult = await client.query(
     `SELECT
@@ -322,6 +387,9 @@ async function getOrderById(client: DbClient, organizationId: string, orderId: s
        o.notes,
        o.subtotal::text AS subtotal,
        o.total::text AS total,
+       o.warehouse_id AS "warehouseId",
+       w.name AS "warehouseName",
+       o.delivered_at AS "deliveredAt",
        o.created_by AS "createdBy",
        u.full_name AS "createdByUserName",
        o.created_at AS "createdAt",
@@ -330,6 +398,9 @@ async function getOrderById(client: DbClient, organizationId: string, orderId: s
      JOIN customers c
        ON c.id = o.customer_id
       AND c.organization_id = o.organization_id
+     LEFT JOIN warehouses w
+       ON w.id = o.warehouse_id
+      AND w.organization_id = o.organization_id
      JOIN users u ON u.id = o.created_by
      WHERE o.organization_id = $1
        AND o.id = $2
@@ -444,17 +515,23 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
            o.subtotal::text AS subtotal,
            o.total::text AS total,
            COUNT(oi.id)::int AS "itemCount",
+           o.warehouse_id AS "warehouseId",
+           w.name AS "warehouseName",
+           o.delivered_at AS "deliveredAt",
            o.created_at AS "createdAt",
            o.updated_at AS "updatedAt"
          FROM orders o
          JOIN customers c
            ON c.id = o.customer_id
           AND c.organization_id = o.organization_id
+         LEFT JOIN warehouses w
+           ON w.id = o.warehouse_id
+          AND w.organization_id = o.organization_id
          LEFT JOIN order_items oi
            ON oi.order_id = o.id
           AND oi.organization_id = o.organization_id
          ${whereSql}
-         GROUP BY o.id, c.name
+         GROUP BY o.id, c.name, w.name
          ORDER BY o.created_at DESC
          LIMIT ${limitPlaceholder}
          OFFSET ${offsetPlaceholder}`,
@@ -579,8 +656,8 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       try {
         await client.query('BEGIN')
 
-        const currentResult = await client.query<{ status: OrderStatus }>(
-          `SELECT status
+        const currentResult = await client.query<{ status: OrderStatus; warehouseId: string | null }>(
+          `SELECT status, warehouse_id AS "warehouseId"
            FROM orders
            WHERE organization_id = $1
              AND id = $2
@@ -610,11 +687,45 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         let nextSubtotal: number | null = null
         let nextTotal: number | null = null
         if (input.items) {
+          // Un pedido confirmado tiene stock reservado: se libera la reserva de los items
+          // actuales y se reserva la de los nuevos en la misma transaccion (todo o nada).
+          const reservedWarehouseId = reservedStatuses.includes(currentOrder.status)
+            ? currentOrder.warehouseId
+            : null
+          const previousRequirements = reservedWarehouseId
+            ? await getOrderStockRequirements(client, organizationId, id)
+            : []
+
           const itemsResult = await replaceOrderItems(client, organizationId, id, input.items)
           if (!itemsResult.ok) {
             await rollbackTransaction(client)
             return reply.code(itemsResult.statusCode).send({ message: itemsResult.message })
           }
+
+          if (reservedWarehouseId) {
+            const nextRequirements = aggregateByProduct(itemsResult.preparedItems)
+            const productIds = [
+              ...new Set([...previousRequirements, ...nextRequirements].map((item) => item.productId)),
+            ]
+            const balances = await lockBalances(client, organizationId, reservedWarehouseId, productIds)
+            await releaseStock(client, organizationId, reservedWarehouseId, previousRequirements, balances)
+
+            const reservation = await reserveStock(
+              client,
+              organizationId,
+              reservedWarehouseId,
+              nextRequirements,
+              balances,
+            )
+            if (!reservation.ok) {
+              await rollbackTransaction(client)
+              const warehouseName = await getWarehouseName(pool, organizationId, reservedWarehouseId)
+              return reply
+                .code(409)
+                .send(insufficientStockBody(reservedWarehouseId, warehouseName, reservation.shortages))
+            }
+          }
+
           nextSubtotal = itemsResult.subtotal
           nextTotal = itemsResult.total
         }
@@ -679,8 +790,8 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       try {
         await client.query('BEGIN')
 
-        const currentResult = await client.query<{ status: OrderStatus }>(
-          `SELECT status
+        const currentResult = await client.query<{ status: OrderStatus; warehouseId: string | null }>(
+          `SELECT status, warehouse_id AS "warehouseId"
            FROM orders
            WHERE organization_id = $1
              AND id = $2
@@ -699,13 +810,96 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(400).send({ message: 'Transicion de estado invalida para este pedido.' })
         }
 
+        let warehouseId = currentOrder.warehouseId
+        const hasReservation = warehouseId !== null && reservedStatuses.includes(currentOrder.status)
+
+        if (input.status === 'cancelled') {
+          if (hasReservation) {
+            const requirements = await getOrderStockRequirements(client, organizationId, id)
+            const balances = await lockBalances(
+              client,
+              organizationId,
+              warehouseId!,
+              requirements.map((item) => item.productId),
+            )
+            await releaseStock(client, organizationId, warehouseId!, requirements, balances)
+          }
+        } else {
+          const requirements = await getOrderStockRequirements(client, organizationId, id)
+          let balances: Awaited<ReturnType<typeof lockBalances>> | null = null
+
+          if (!hasReservation) {
+            // Confirmacion (o pedido previo a 6.1 sin deposito): se elige deposito y se reserva.
+            if (!input.warehouseId) {
+              await rollbackTransaction(client)
+              return reply.code(400).send({
+                message: 'Selecciona el deposito desde el que se va a despachar el pedido.',
+                code: 'warehouse_required',
+              })
+            }
+
+            const warehouseCheck = await findWarehouseForOrder(client, organizationId, input.warehouseId)
+            if (!warehouseCheck.ok) {
+              await rollbackTransaction(client)
+              return reply.code(warehouseCheck.statusCode).send({ message: warehouseCheck.message })
+            }
+
+            balances = await lockBalances(
+              client,
+              organizationId,
+              input.warehouseId,
+              requirements.map((item) => item.productId),
+            )
+            const reservation = await reserveStock(client, organizationId, input.warehouseId, requirements, balances)
+            if (!reservation.ok) {
+              await rollbackTransaction(client)
+              return reply
+                .code(409)
+                .send(insufficientStockBody(input.warehouseId, warehouseCheck.warehouse.name, reservation.shortages))
+            }
+
+            warehouseId = input.warehouseId
+          } else if (input.warehouseId && input.warehouseId !== warehouseId) {
+            await rollbackTransaction(client)
+            return reply.code(400).send({
+              message: 'El pedido ya tiene stock reservado en otro deposito. Cancelalo para cambiar de deposito.',
+            })
+          }
+
+          if (input.status === 'delivered') {
+            balances ??= await lockBalances(
+              client,
+              organizationId,
+              warehouseId!,
+              requirements.map((item) => item.productId),
+            )
+            const consumption = await consumeReservedStock(client, {
+              organizationId,
+              warehouseId: warehouseId!,
+              orderId: id,
+              userId,
+              requirements,
+              balances,
+            })
+            if (!consumption.ok) {
+              await rollbackTransaction(client)
+              return reply.code(409).send({
+                message: 'La reserva de stock del pedido no coincide con el inventario. Revisa el stock del deposito.',
+                code: 'reservation_mismatch',
+              })
+            }
+          }
+        }
+
         await client.query(
           `UPDATE orders
            SET status = $3,
+               warehouse_id = $4,
+               delivered_at = CASE WHEN $3::order_status = 'delivered' THEN NOW() ELSE delivered_at END,
                updated_at = NOW()
            WHERE organization_id = $1
              AND id = $2`,
-          [organizationId, id, input.status],
+          [organizationId, id, input.status, warehouseId],
         )
 
         await client.query(

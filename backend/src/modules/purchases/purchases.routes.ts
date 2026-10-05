@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
+import { recordMovement } from '../inventory/stock-ledger.js'
 
 const purchaseIdParamsSchema = z.object({
   id: z.string().uuid(),
@@ -466,7 +467,12 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
           resultingCost: string
         }> = []
 
-        for (const [productId, aggregate] of aggregatedByProduct.entries()) {
+        // Orden fijo por producto: mismo orden de bloqueo que las reservas de pedidos.
+        const sortedAggregates = [...aggregatedByProduct.entries()].sort(([left], [right]) =>
+          left.localeCompare(right),
+        )
+
+        for (const [productId, aggregate] of sortedAggregates) {
           const incomingQuantity = Number(aggregate.quantity.toFixed(3))
           const incomingTotal = Number(aggregate.total.toFixed(2))
 
@@ -483,15 +489,17 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
           const previousQuantity = Number(balanceResult.rows[0]?.quantity ?? '0')
           const newQuantity = Number((previousQuantity + incomingQuantity).toFixed(3))
 
-          await client.query(
+          const upsertBalanceResult = await client.query<{ quantity: string }>(
             `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (warehouse_id, product_id)
              DO UPDATE SET
                quantity = inventory_balances.quantity + EXCLUDED.quantity,
-               updated_at = NOW()`,
+               updated_at = NOW()
+             RETURNING quantity::text AS quantity`,
             [organizationId, input.warehouseId, productId, incomingQuantity],
           )
+          const balanceAfter = Number(upsertBalanceResult.rows[0].quantity)
 
           await client.query(
             `INSERT INTO inventory_adjustments (
@@ -519,6 +527,18 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
               purchaseId,
             ],
           )
+
+          await recordMovement(client, {
+            organizationId,
+            warehouseId: input.warehouseId,
+            productId,
+            movementType: 'purchase',
+            quantityDelta: incomingQuantity,
+            balanceAfter,
+            sourceType: 'purchase',
+            sourceId: purchaseId,
+            createdBy: userId,
+          })
 
           const productCostResult = await client.query<{ cost: string }>(
             `SELECT cost::text AS cost
