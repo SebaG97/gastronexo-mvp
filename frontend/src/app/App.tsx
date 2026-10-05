@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { DashboardView } from '../features/dashboard/DashboardView'
 import { CustomersView } from '../features/customers/CustomersView'
 import { MembersView } from '../features/organization/MembersView'
@@ -230,6 +230,14 @@ export function App() {
       ])
 
       saveStoredToken(switchResponse.token)
+      // La vista se re-monta por organización (ver `key` abajo); los pedidos de acción
+      // primaria pendientes no deben reabrir formularios en la organización nueva.
+      setProductCreateRequestId(0)
+      setCutTypeCreateRequestId(0)
+      setCustomerCreateRequestId(0)
+      setOrderCreateRequestId(0)
+      setPurchaseCreateRequestId(0)
+      setStockAdjustRequestId(0)
       setSession({
         token: switchResponse.token,
         user: sessionResponse.user,
@@ -345,7 +353,8 @@ export function App() {
       theme={theme}
       title={metadata.title}
     >
-      {view}
+      {/* H18: re-montar al cambiar de organización descarta estado local (depósito, filtros) de la anterior. */}
+      <Fragment key={session.organization.id}>{view}</Fragment>
     </SystemShell>
   )
 }
