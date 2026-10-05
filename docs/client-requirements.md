@@ -1,5 +1,22 @@
 # Client Requirements Log
 
+## Estado actual (Mision 6.1)
+
+- Pedidos e inventario quedan conectados:
+  - crear o editar un pedido en `new` no toca el stock;
+  - **confirmar** exige elegir el depósito de despacho y reserva el stock (un pedido = un depósito);
+  - **entregar** descuenta el stock del depósito y registra la venta;
+  - **cancelar** (desde confirmado, en preparación o listo) libera la reserva.
+- Si no hay stock suficiente, la confirmación se bloquea con un mensaje que indica el producto, lo pedido, lo disponible y lo que falta. No se reserva nada parcialmente y nunca hay stock negativo.
+- Editar los ítems de un pedido confirmado ajusta su reserva. Si no alcanza el stock, la edición se rechaza.
+- Disponible = cantidad − reservado. Un ajuste manual no puede dejar la cantidad por debajo de lo reservado.
+- Todo cambio de stock (compras, ajustes y ventas) queda en un historial de movimientos que no se puede modificar ni borrar. Cada movimiento tiene el saldo resultante, el usuario y su origen (factura, número de pedido o motivo). Las correcciones se hacen con un ajuste nuevo.
+- Se pueden vender materias primas marcadas como vendibles (por ejemplo Papa, Cebolla). El corte no cambia el producto: el stock se descuenta del producto base.
+- Una "venta" es un pedido entregado. El módulo Ventas es de solo lectura (listado y total del período); no hay ventas manuales, pagos ni facturación.
+- El Dashboard muestra la facturación del mes (suma de pedidos entregados). Mermas y alertas siguen sin datos.
+- Los pedidos entregados antes de esta misión no descontaron stock y no se recalcularon. Un pedido confirmado antes de esta misión debe elegir depósito para seguir avanzando.
+- Fuera de alcance: producción (materia prima → elaborado), mermas, lotes/vencimientos, mínimos y alertas, transferencias entre depósitos, pedidos multi-depósito, pagos/facturación, ecommerce público.
+
 ## Estado actual (Mision 5.2)
 
 - Se incorpora el motor administrativo de pedidos como dominio central para administracion y futuro ecommerce.
@@ -18,7 +35,7 @@
   - subtotal y total calculados;
   - numero operativo legible.
 - Los precios y cortes del pedido quedan congelados en `order_items`.
-- Crear un pedido no descuenta, reserva ni altera inventario en esta mision.
+- Crear un pedido no descuenta, reserva ni altera inventario en esta mision (reemplazado en 6.1: confirmar reserva y entregar descuenta).
 - Un producto puede venderse desde administracion aunque no sea visible en catalogo ecommerce.
 - Estados disponibles: `new`, `confirmed`, `preparing`, `ready`, `delivered`, `cancelled`.
 

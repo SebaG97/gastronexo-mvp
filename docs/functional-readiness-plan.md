@@ -1,5 +1,87 @@
 # Functional Readiness Plan
 
+## Misión 6.1 - Stock real: movimientos inmutables, reserva y descuento por pedidos
+
+Conecta Pedidos con Inventario. Todo cambio de stock (compras, ajustes, ventas) queda en un ledger inmutable. Confirmar un pedido reserva stock, entregarlo lo descuenta y cancelarlo libera la reserva.
+
+### Fase 0 - H18 (commit `ac191d7`)
+
+- La vista activa se monta con `key={organizationId}` en `app/App.tsx`. Al cambiar de organización se descarta el estado local (depósito, filtros, páginas) de cualquier vista, no solo de Stock. También se reinician los contadores de acción primaria, para que el re-montaje no reabra formularios.
+- Verificación con 2 orgs (Playwright, usuario operator en la segunda). **Sin el fix:** 3 × 404 (`/api/inventory` ×2 y `/api/inventory/adjustments` con el depósito de la org anterior). **Con el fix:** 0 respuestas ≥ 400 y el selector muestra el depósito de la org nueva.
+
+### Fase 1 - Auditoría (antes de escribir código)
+
+1. No existía `inventory_movements`. El ledger de hecho era `inventory_adjustments` (003): `previous_quantity`, `new_quantity`, `delta` con CHECK, `reason`, usuario. La 004 agregó `source_type IN ('manual','purchase')` y `purchase_order_id`.
+2. Compras y ajustes manuales ya escribían en esa tabla (compras: una fila por producto agregado, `reason='purchase:<id>'`). No era inmutable.
+3. Datos existentes consistentes: 8 filas (4 de compra), 6 balances, suma de deltas = `quantity` en todos y cadena previous→new sin huecos.
+4. `inventory_balances` sin noción de reserva. Inactivar un depósito solo exige `quantity = 0`.
+5. `is_sellable` no depende de `product_type`: hay `raw_material` vendibles (caso Papa/Cebolla de 5.2). Compras solo acepta `raw_material`; un `finished_product` solo recibe stock por ajuste manual (producción fuera de alcance). El corte es precio + snapshot: el descuento va al `product_id` del ítem.
+6. Contradicciones con el plan y cómo se resolvieron:
+   - **Ítems editables en `confirmed`** (5.2): editar un pedido confirmado libera la reserva vieja y reserva la nueva en la misma transacción; si falta stock, 409 sin cambios.
+   - **Datos previos a 6.1:** había 5 pedidos `delivered` que nunca descontaron stock y 1 `confirmed` sin depósito. No se generaron movimientos de venta retroactivos, porque descontar ahora falsearía balances que ya reflejan la realidad. Un pedido sin depósito no avanza a `preparing`, `ready` ni `delivered` hasta elegir uno, y en ese momento reserva igual que al confirmar.
+   - **Ajuste manual por debajo de lo reservado:** se bloquea con 409.
+   - `inventory_adjustments` se mantiene como documento del ajuste (motivo) y por compatibilidad de `GET /api/inventory/adjustments`. El ledger lo referencia por `source_id`.
+
+### Fase 2 - Migración `007_inventory_movements_and_reservations.sql`
+
+| Elemento | Detalle |
+| --- | --- |
+| `inventory_movements` | `organization_id`, `warehouse_id`, `product_id`, `movement_type` (`purchase`/`adjustment`/`sale`), `quantity_delta` con signo (CHECK por tipo: compra > 0, venta < 0), `balance_after >= 0`, `source_type` (`purchase`/`adjustment`/`order_delivery`, CHECK de coherencia con el tipo), `source_id`, `created_by`, `created_at`. FKs compuestas `(id, organization_id)` a depósito y producto. Único `(source_type, source_id, warehouse_id, product_id)`: hace idempotente el backfill e impide descontar dos veces una entrega. |
+| Inmutabilidad | Trigger `BEFORE UPDATE OR DELETE` (por fila) y `BEFORE TRUNCATE` que lanza `inventory_movements es inmutable`. Además `REVOKE UPDATE, DELETE, TRUNCATE ... FROM PUBLIC`. Las correcciones son movimientos nuevos (ajustes). |
+| Backfill | Desde `inventory_adjustments`: `manual` → `adjustment` (`source_id` = id del ajuste), `purchase` → `purchase` (`source_id` = `purchase_order_id`), `balance_after = new_quantity`. `ON CONFLICT DO NOTHING`. Resultado sobre la base existente: 8 movimientos (4 compras +88, 4 ajustes, neto 0) y 0 balances con diferencia entre `quantity` y la suma de movimientos. |
+| Reservas | `inventory_balances.reserved_quantity` con `CHECK (reserved_quantity >= 0 AND reserved_quantity <= quantity)`; disponible = `quantity − reserved_quantity`. Se eligió sobre una tabla `stock_reservations` porque se bloquea una sola fila por producto, el disponible es una columna y la propia base impide la sobreventa. El detalle por pedido se deriva de `order_items` + estado + `orders.warehouse_id`, sin una tabla extra que mantener sincronizada (incluida la edición de ítems). |
+| Pedidos | `orders.warehouse_id` (nullable hasta confirmar, FK `(warehouse_id, organization_id)` → aislamiento por organización) y `orders.delivered_at` (base de Ventas; backfill desde `order_status_history` para los entregados previos). |
+| Idempotencia | `IF NOT EXISTS` / `CREATE OR REPLACE` / `DROP TRIGGER IF EXISTS` / constraints en bloques `DO`. Se re-ejecutó el SQL completo sobre la base ya migrada: sin errores y sin duplicar movimientos. Antes de migrar se tomó un `pg_dump` (fuera del repo). |
+
+### Fase 3 - Reglas en backend
+
+- Módulo compartido `modules/inventory/stock-ledger.ts`: `lockBalances` (`SELECT ... FOR UPDATE` ordenado por `product_id`, mismo orden que compras para evitar deadlocks), `reserveStock` (todo o nada), `releaseStock`, `consumeReservedStock`, `recordMovement`.
+- `PATCH /api/orders/:id/status` acepta `warehouseId` opcional. Todo ocurre en una transacción, junto con el historial de estados:
+  - **Confirmar** (o avanzar un pedido sin depósito): exige `warehouseId` (`400 warehouse_required`). El depósito debe ser de la organización (404) y estar activo (400). Bloquea los balances y valida disponible ≥ cantidad agregada por producto (un mismo producto con dos cortes suma). Si falta stock: `409 { code: 'insufficient_stock', warehouseName, shortages: [{ productName, unit, requested, available, missing }] }`, sin reservas parciales. Un producto sin balance en el depósito cuenta con disponible 0.
+  - **Entregar:** baja `quantity` y `reserved_quantity` y escribe un movimiento `sale` (`order_delivery`) con delta negativo y `balance_after`. Fija `delivered_at`.
+  - **Cancelar** (desde `confirmed`/`preparing`/`ready`): libera la reserva y no genera movimientos.
+  - Un pedido con reserva no puede cambiar de depósito (400); hay que cancelarlo.
+- `PATCH /api/orders/:id` en `confirmed`: re-reserva atómica (409 con faltantes si no alcanza).
+- Compras y ajustes escriben movimientos. En compras, `balance_after` sale del `RETURNING` del upsert. Un ajuste por debajo de lo reservado devuelve 409.
+- Endpoints: `GET /api/inventory` suma `reservedQuantity` y `availableQuantity`. Nuevo `GET /api/inventory/movements` (filtros `productId`, `warehouseId`, `movementType`, `from`, `to`, paginado; `sourceReference` = factura, número de pedido o motivo del ajuste). Nuevo `GET /api/sales` (pedidos `delivered` por `delivered_at`, con `summary { count, total }`). Pedidos (listado y detalle) suman `warehouseId`, `warehouseName` y `deliveredAt`. El resto de los contratos no cambia.
+
+### Fase 4 - Frontend
+
+- **Stock:** columnas Cantidad / Reservado / Disponible. El panel "Movimientos de stock" (ledger, con filtros producto/tipo/fechas y estados cargando/vacío/error) reemplaza a "Historial de ajustes": los ajustes siguen ahí con su motivo, y las compras muestran el número de factura en vez de `purchase:<uuid>` (cierra H11). El formulario de ajuste muestra el mínimo reservado.
+- **Pedidos:** selector "Deposito de despacho" cuando el pedido no tiene depósito. El 409 se muestra como aviso (`role="alert"`) con producto, pedido, disponible y faltante. Depósito en el listado y en el detalle, y fecha de entrega en el detalle. Al editar un confirmado se avisa que se ajusta la reserva.
+- **Ventas:** listado de solo lectura de pedidos entregados con período (por defecto, el mes actual), búsqueda, total vendido y cantidad. La acción primaria pasa a "Nuevo pedido" (no hay ventas manuales).
+- **Dashboard:** "Facturación del mes" = suma real de pedidos entregados desde el 1° del mes (hora local). Mermas y alertas siguen en "Sin datos todavía".
+- Sin `window.alert` (Playwright no registró ningún diálogo). El viewer ve "Solo lectura", sin selector de depósito ni botones de transición.
+
+### Verificación
+
+- `npm run db:migrate` (aplicó 007), `backend npm run build` y `frontend npm run build` sin errores (JS 262 kB / 71 kB gzip).
+- **Flujo real contra PostgreSQL** (script E2E vía API, **46/46 OK**):
+
+| Paso | Esperado | Resultado |
+| --- | --- | --- |
+| Compra 100 kg Papa + 20 kg Cebolla en Central | Papa q=100 r=0 d=100; movimiento `purchase` +100, saldo 100, referencia = factura | OK |
+| Pedido Papa 30 + Cebolla 5 (en `new`) | Sin reserva | OK |
+| Confirmar en Central | Papa q=100 r=30 d=70 | OK |
+| `preparing` → `ready` → `delivered` | Papa q=70 r=0; Cebolla q=15; movimiento `sale` −30 con saldo 70 y número de pedido | OK |
+| Otro pedido Papa 10: confirmar → preparar → cancelar | r 10 → 0, q=70 intacta, sin movimiento nuevo | OK |
+| Editar un confirmado 10 → 60 kg / 60 → 100 kg | r=60 / 409 sin cambios en reserva ni ítems | OK |
+| Ajuste a 50 con 60 reservados / ajuste 70 → 75 | 409 / movimiento `adjustment` +5, saldo 75, referencia = motivo | OK |
+| Ventas | 1 pedido, total = total del pedido entregado (Gs. 170.000) | OK |
+| Consistencia global | Suma de movimientos = `quantity` en todos los balances de la base | OK (0 diferencias) |
+
+- **Negativos:** stock insuficiente (Papa 80 con 70 disponibles → 409 con faltan 10; la Cebolla del mismo pedido no quedó reservada; el pedido sigue `new` y sin depósito); depósito de otra org → 404; producto sin balance → 409 con disponible 0; depósito sin stock → 409; confirmar sin depósito → 400 `warehouse_required`; pedido previo a 6.1 (`confirmed` sin depósito) → `preparing` exige depósito y luego reserva; viewer cambia estado o ajusta → 403, lee inventario y movimientos → 200; otra org: pedido → 404, movimientos de depósito ajeno → 404, listado de movimientos vacío, confirmar pedido ajeno → 404; `UPDATE` y `DELETE` sobre `inventory_movements` → rechazados por el trigger (también `TRUNCATE`, probado por psql).
+- **Concurrencia:** 10 confirmaciones simultáneas de 10 kg con 75 disponibles → 7 × 200, 3 × 409, reservado 70, disponible 5 (sin sobreventa). El mismo pedido confirmado dos veces en paralelo → 200 + 400 (transición inválida) y una sola reserva.
+- **Compatibilidad:** compras y ajustes siguen respondiendo igual (201) y ahora generan movimientos; `GET /api/inventory/adjustments` sin cambios; `/health` y `/ready` en 200.
+- **UI (Playwright 1.55, Chromium):** confirmar con faltantes muestra el aviso (Papa: faltan 20 kg; Milanesa de carne: faltan 2 kg), y confirmar con stock muestra "Stock reservado en Depósito Central". Sin scroll horizontal de página en Pedidos (también con el detalle abierto), Stock, Ventas y Dashboard a 1440/1024/390 (las tablas anchas scrollean dentro de `TableScroll`). Sin errores de consola (salvo el 409 esperado), sin diálogos y sin emails en pantalla.
+- **Screenshots** en `docs/visual-qa/6.1/` (11 PNG, 0.9 MB), con datos de la org `Restaurante Demo 6.1` (usuarios con nombre, sin emails ni credenciales): `stock-1440/390`, `pedidos-confirmar-error-1440/390`, `pedidos-confirmado-1440`, `ventas-1440/390`, `dashboard-1440/390`, `viewer-stock-1440`, `viewer-pedido-detalle-1440`.
+
+### Estado y pendientes
+
+- H18 cerrado (también se cierra H11). Pendientes de 5.3: H5, H7–H10, H12–H17.
+- A 390 px, las columnas Reservado/Disponible de Stock quedan a la derecha del scroll de la tabla. Es el mismo patrón que el resto de las tablas; podría priorizarse una vista en tarjetas si el uso móvil es frecuente.
+- Fuera de alcance (sin cambios): producción, mermas, lotes/vencimientos, mínimos y alertas, transferencias, pedidos multi-depósito, pagos/facturación, ecommerce público.
+
 ## Misión 5.4 - Endurecimiento de UX (H2, H3, H4, H6)
 
 Cierra los hallazgos de mayor impacto de la verificación 5.3, sin rediseño ni features nuevas.
@@ -35,7 +117,7 @@ Quedan `window.confirm` solo como confirmación de acciones destructivas (inacti
 
 | # | Prioridad | Tipo | Pantalla | Archivo | Hallazgo |
 | --- | --- | --- | --- | --- | --- |
-| H18 | Media | Bug | Stock | `features/stock/StockView.tsx` | Si se cambia de organización con Stock abierto, la vista conserva el `selectedWarehouseId` de la org anterior y pide `/api/inventory?warehouseId=<otro>` → 404 (inventario y ajustes). Es preexistente; con 5.4 se ve como error con "Reintentar", que repite el 404 hasta que se recarga la sección. Propuesta: reiniciar el depósito seleccionado al cambiar `token`/organización. |
+| H18 | Media · **Resuelto en 6.1** | Bug | Stock | `features/stock/StockView.tsx` | Si se cambia de organización con Stock abierto, la vista conserva el `selectedWarehouseId` de la org anterior y pide `/api/inventory?warehouseId=<otro>` → 404 (inventario y ajustes). Es preexistente; con 5.4 se ve como error con "Reintentar", que repite el 404 hasta que se recarga la sección. Propuesta: reiniciar el depósito seleccionado al cambiar `token`/organización. |
 
 ### Estado
 
@@ -118,7 +200,7 @@ En `docs/visual-qa/` (69 PNG, ~4.6 MB, página completa). En `miembros-*`, `vaci
 | H8 | Media | UX/texto | Formularios (Productos, Login, Pedidos) | `features/products/ProductForm.tsx` | Los atributos `required` nativos muestran el globo del navegador en el idioma del navegador ("Please fill out this field.") antes que los mensajes propios `.form-error`. |
 | H9 | Media | a11y | Todas | `shared/styles/app.css:65` | Falta un estilo `:focus-visible` propio para botones, ítems de navegación y selects; solo los inputs de `.field` tienen anillo de foco con la marca. |
 | H10 | Media | a11y | Topbar (todas) | `app/components/SystemShell.tsx` | Hay dos `h1` por pantalla (topbar y página) con el mismo texto. El `select` de organización no tiene `<label>` asociado. El nombre de la organización se repite (select y span). La navegación no usa `aria-current`. |
-| H11 | Baja | UX | Stock › Historial de ajustes | `features/stock/StockView.tsx` | La columna "Motivo" muestra el valor crudo `purchase:<uuid>`. |
+| H11 | Baja · **Resuelto en 6.1** | UX | Stock › Historial de ajustes | `features/stock/StockView.tsx` | La columna "Motivo" muestra el valor crudo `purchase:<uuid>`. |
 | H12 | Baja | UI | Productos, Categorías | `app.css:516` | `td.products-table__actions` usa `display: flex`, por eso el borde inferior de la columna Acciones queda desalineado con el resto de la fila. |
 | H13 | Baja | Dominio | Productos | `backend/src/modules/products/products.routes.ts` | Se permiten productos activos con nombre duplicado (se crearon dos "Zanahoria rallada QA 7716"). Confirmar si es intencional. |
 | H14 | Baja | Texto | Varias | — | Se mezcla tuteo y voseo: "Gestiona pedidos…" (Pedidos) frente a "Gestioná productos…" (Productos, Stock, Miembros). |
