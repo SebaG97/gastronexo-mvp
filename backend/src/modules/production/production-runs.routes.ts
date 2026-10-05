@@ -245,6 +245,18 @@ async function planProduction(
   const factor = quantity / yieldQuantity
 
   const productIds = [...itemsResult.rows.map((item) => item.productId), product.id]
+
+  if (options.lock) {
+    // El balance del terminado debe existir antes de bloquear: si una transaccion concurrente
+    // lo crea a mitad de camino, las demas lo bloquearian en otro orden (deadlock).
+    await client.query(
+      `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
+       VALUES ($1, $2, $3, 0)
+       ON CONFLICT (warehouse_id, product_id) DO NOTHING`,
+      [organizationId, input.warehouseId, product.id],
+    )
+  }
+
   const balances = options.lock
     ? await lockBalances(client, organizationId, input.warehouseId, productIds)
     : await readBalances(client, organizationId, input.warehouseId, productIds)
@@ -717,7 +729,7 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
 
         await client.query('COMMIT')
 
-        const productionRun = await getProductionRunById(pool, organizationId, runId)
+        const productionRun = await getProductionRunById(client, organizationId, runId)
         return reply.code(201).send({
           productionRun,
           resultingCost: plan.resultingCost.toFixed(2),
@@ -917,7 +929,7 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
 
         await client.query('COMMIT')
 
-        const productionRun = await getProductionRunById(pool, organizationId, id)
+        const productionRun = await getProductionRunById(client, organizationId, id)
         return { productionRun }
       } catch (error) {
         await rollbackTransaction(client)

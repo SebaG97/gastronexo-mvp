@@ -351,7 +351,7 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
         await replaceRecipeItems(client, organizationId, recipeId, input.items)
         await client.query('COMMIT')
 
-        const recipe = await getRecipeById(pool, organizationId, recipeId)
+        const recipe = await getRecipeById(client, organizationId, recipeId)
         return reply.code(201).send({ recipe })
       } catch (error) {
         await rollbackTransaction(client)
@@ -429,7 +429,7 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
 
         await client.query('COMMIT')
 
-        const recipe = await getRecipeById(pool, organizationId, id)
+        const recipe = await getRecipeById(client, organizationId, id)
         return { recipe }
       } catch (error) {
         await rollbackTransaction(client)
@@ -488,7 +488,7 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
 
         await client.query('COMMIT')
 
-        const recipe = await getRecipeById(pool, organizationId, id)
+        const recipe = await getRecipeById(client, organizationId, id)
         return { recipe }
       } catch (error) {
         await rollbackTransaction(client)
