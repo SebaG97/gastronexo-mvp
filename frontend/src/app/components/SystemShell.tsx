@@ -152,10 +152,16 @@ export function SystemShell({
             <button aria-label="Cerrar sesión" className="icon-button" onClick={onLogout} type="button">
               <LogOut size={17} />
             </button>
+            {isPrimaryActionDisabled && primaryActionDisabledReason ? (
+              <span className="topbar__action-hint" id="primary-action-hint">
+                {primaryActionDisabledReason}
+              </span>
+            ) : null}
             <Button
               disabled={isPrimaryActionDisabled}
               onClick={onPrimaryAction}
               title={isPrimaryActionDisabled ? primaryActionDisabledReason : undefined}
+              aria-describedby={isPrimaryActionDisabled ? 'primary-action-hint' : undefined}
             >
               {primaryAction}
             </Button>

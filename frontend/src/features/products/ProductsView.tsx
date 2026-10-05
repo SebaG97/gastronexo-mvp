@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createProduct,
@@ -75,12 +75,13 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingProductId, setPendingProductId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [activeCategories, setActiveCategories] = useState<ProductCategory[]>([])
 
   const canShowEmptyState = useMemo(
-    () => !isLoading && products.length === 0 && !errorMessage,
-    [errorMessage, isLoading, products.length],
+    () => !isLoading && products.length === 0 && !loadError,
+    [isLoading, loadError, products.length],
   )
 
   useEffect(() => {
@@ -103,7 +104,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
   }, [canWriteProducts, createRequestId])
 
   async function loadProducts() {
-    setErrorMessage(null)
+    setLoadError(null)
     setIsLoading(true)
 
     try {
@@ -120,12 +121,9 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
       setProducts(response.products)
       setTotal(response.pagination.total)
       setTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorMessage(error.message)
-      } else {
-        setErrorMessage('No se pudo cargar el catálogo de productos.')
-      }
+    } catch {
+      setProducts([])
+      setLoadError('No se pudo cargar el catálogo de productos.')
     } finally {
       setIsLoading(false)
     }
@@ -262,7 +260,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
         </Panel>
       ) : null}
 
-      <Panel className="products-panel" title="Catálogo" action={<span>Total: {total}</span>}>
+      <Panel className="products-panel" title="Catálogo" action={loadError ? undefined : <span>Total: {total}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
             Buscar por nombre o SKU
@@ -290,37 +288,41 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
           </label>
         </div>
 
+        {loadError ? (
+          <LoadErrorState message={loadError} onRetry={() => void loadProducts()} isRetrying={isLoading} />
+        ) : null}
         {isLoading ? <p>Cargando productos...</p> : null}
         {canShowEmptyState ? <p>No hay productos para los filtros seleccionados.</p> : null}
 
         {!isLoading && products.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>SKU</th>
-                <th>Tipo</th>
-                <th>Categoría</th>
-                <th>Unidad</th>
-                <th>Costo</th>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>SKU</th>
+                  <th>Tipo</th>
+                  <th>Categoría</th>
+                  <th>Unidad</th>
+                  <th>Costo</th>
                 <th>Comercial</th>
                 <th>Precio venta</th>
                 <th>Estado</th>
                 <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((product) => (
-                <tr key={product.id}>
-                  <td>{product.name}</td>
-                  <td>{product.sku ?? '—'}</td>
-                  <td>
-                    <StatusBadge tone={product.productType === 'raw_material' ? 'warning' : 'success'}>
-                      {productTypeLabelByKey[product.productType]}
-                    </StatusBadge>
-                  </td>
-                  <td>{product.categoryName ?? 'Sin categoría'}</td>
-                  <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id}>
+                    <td>{product.name}</td>
+                    <td>{product.sku ?? '—'}</td>
+                    <td>
+                      <StatusBadge tone={product.productType === 'raw_material' ? 'warning' : 'success'}>
+                        {productTypeLabelByKey[product.productType]}
+                      </StatusBadge>
+                    </td>
+                    <td>{product.categoryName ?? 'Sin categoría'}</td>
+                    <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
                   <td>{formatCost(product.cost)}</td>
                   <td>
                     <span className="products-table__badges">
@@ -335,30 +337,30 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                   <td>{formatSalePrice(product.salePrice)}</td>
                   <td>
                     <StatusBadge tone={product.isActive ? 'success' : 'warning'}>
-                      {product.isActive ? 'Activo' : 'Inactivo'}
-                    </StatusBadge>
-                  </td>
-                  <td className="products-table__actions">
-                    {canWriteProducts ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={pendingProductId === product.id}
-                          onClick={() => setFormMode({ type: 'edit', product })}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={pendingProductId === product.id}
-                          onClick={() => void handleToggleStatus(product)}
-                        >
-                          {product.isActive ? 'Inactivar' : 'Activar'}
-                        </Button>
-                      </>
-                    ) : (
+                        {product.isActive ? 'Activo' : 'Inactivo'}
+                      </StatusBadge>
+                    </td>
+                    <td className="products-table__actions">
+                      {canWriteProducts ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingProductId === product.id}
+                            onClick={() => setFormMode({ type: 'edit', product })}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingProductId === product.id}
+                            onClick={() => void handleToggleStatus(product)}
+                          >
+                            {product.isActive ? 'Inactivar' : 'Activar'}
+                          </Button>
+                        </>
+                      ) : (
                       <Button
                         type="button"
                         variant="secondary"
@@ -368,30 +370,33 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
                       </Button>
                     )}
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>
-            Página {page} de {Math.max(totalPages, 1)}
-          </span>
-          <div className="products-pagination__actions">
-            <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
-              Anterior
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={totalPages === 0 || page >= totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              Siguiente
-            </Button>
+        {loadError ? null : (
+          <div className="products-pagination">
+            <span>
+              Página {page} de {Math.max(totalPages, 1)}
+            </span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={totalPages === 0 || page >= totalPages}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       <Panel className="products-panel" title="Categorías">

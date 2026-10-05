@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createCustomer,
@@ -179,6 +179,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
   const [isSubmittingCustomer, setIsSubmittingCustomer] = useState(false)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const formTotal = useMemo(
@@ -210,7 +211,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
 
   async function loadOrders() {
     setIsLoadingOrders(true)
-    setErrorMessage(null)
+    setLoadError(null)
 
     try {
       const response = await getOrders(
@@ -225,8 +226,8 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
       setOrders(response.orders)
       setTotal(response.pagination.total)
       setTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudieron cargar los pedidos.')
+    } catch {
+      setLoadError('No se pudieron cargar los pedidos.')
       setOrders([])
     } finally {
       setIsLoadingOrders(false)
@@ -568,7 +569,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
         </Panel>
       ) : null}
 
-      <Panel className="orders-panel" title="Listado de pedidos" action={<span>Total: {total}</span>}>
+      <Panel className="orders-panel" title="Listado de pedidos" action={loadError ? undefined : <span>Total: {total}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
             Buscar por numero o cliente
@@ -585,48 +586,53 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
           </label>
         </div>
 
+        {loadError ? <LoadErrorState message={loadError} onRetry={() => void loadOrders()} isRetrying={isLoadingOrders} /> : null}
         {isLoadingOrders ? <p>Cargando pedidos...</p> : null}
-        {!isLoadingOrders && orders.length === 0 ? <p>No hay pedidos para los filtros seleccionados.</p> : null}
+        {!isLoadingOrders && !loadError && orders.length === 0 ? <p>No hay pedidos para los filtros seleccionados.</p> : null}
         {!isLoadingOrders && orders.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Numero</th>
-                <th>Cliente</th>
-                <th>Fecha</th>
-                <th>Entrega</th>
-                <th>Items</th>
-                <th>Total</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id}>
-                  <td>{order.orderNumber}</td>
-                  <td>{order.customerName}</td>
-                  <td>{new Date(order.orderDate).toLocaleDateString('es-PY')}</td>
-                  <td>{order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</td>
-                  <td>{order.itemCount}</td>
-                  <td>{formatMoney(order.total)}</td>
-                  <td><StatusBadge tone={statusToneByKey[order.status]}>{statusLabelByKey[order.status]}</StatusBadge></td>
-                  <td className="products-table__actions">
-                    <Button type="button" variant="secondary" disabled={isLoadingDetail} onClick={() => void handleSelectOrder(order.id)}>Ver detalle</Button>
-                  </td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Numero</th>
+                  <th>Cliente</th>
+                  <th>Fecha</th>
+                  <th>Entrega</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr key={order.id}>
+                    <td>{order.orderNumber}</td>
+                    <td>{order.customerName}</td>
+                    <td>{new Date(order.orderDate).toLocaleDateString('es-PY')}</td>
+                    <td>{order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</td>
+                    <td>{order.itemCount}</td>
+                    <td>{formatMoney(order.total)}</td>
+                    <td><StatusBadge tone={statusToneByKey[order.status]}>{statusLabelByKey[order.status]}</StatusBadge></td>
+                    <td className="products-table__actions">
+                      <Button type="button" variant="secondary" disabled={isLoadingDetail} onClick={() => void handleSelectOrder(order.id)}>Ver detalle</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
-          <div className="products-pagination__actions">
-            <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
-            <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>
+        {loadError ? null : (
+          <div className="products-pagination">
+            <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
+              <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       {selectedOrder ? (
@@ -642,30 +648,32 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
             <span>Total: <strong>{formatMoney(selectedOrder.total)}</strong></span>
           </div>
           {selectedOrder.notes ? <p className="purchase-detail-notes">{selectedOrder.notes}</p> : null}
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Corte</th>
-                <th>Cantidad</th>
-                <th>Precio base</th>
-                <th>Recargo corte</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedOrder.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.productNameSnapshot}</td>
-                  <td>{item.cutNameSnapshot ?? 'Sin corte'}</td>
-                  <td>{formatQuantity(item.quantity)} {productUnitLabelByKey[item.productUnitSnapshot]}</td>
-                  <td>{formatMoney(item.unitPrice)}</td>
-                  <td>{formatMoney(item.cutPriceModifier)}</td>
-                  <td>{formatMoney(item.subtotal)}</td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Corte</th>
+                  <th>Cantidad</th>
+                  <th>Precio base</th>
+                  <th>Recargo corte</th>
+                  <th>Subtotal</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {selectedOrder.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.productNameSnapshot}</td>
+                    <td>{item.cutNameSnapshot ?? 'Sin corte'}</td>
+                    <td>{formatQuantity(item.quantity)} {productUnitLabelByKey[item.productUnitSnapshot]}</td>
+                    <td>{formatMoney(item.unitPrice)}</td>
+                    <td>{formatMoney(item.cutPriceModifier)}</td>
+                    <td>{formatMoney(item.subtotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
 
           <div className="order-actions">
             {canWriteOrders && (selectedOrder.status === 'new' || selectedOrder.status === 'confirmed') ? (

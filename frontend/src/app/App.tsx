@@ -38,6 +38,15 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   members: { title: 'Miembros', action: 'Gestionar accesos' },
 }
 
+const sectionsWithPrimaryAction: AppSection[] = [
+  'products',
+  'cutTypes',
+  'customers',
+  'orders',
+  'purchases',
+  'stock',
+]
+
 export function App() {
   const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>(
     'checking',
@@ -66,7 +75,7 @@ export function App() {
     const canWriteProducts = session?.organization.capabilities.canWriteProducts ?? false
 
     const views: Record<AppSection, JSX.Element> = {
-      dashboard: <DashboardView />,
+      dashboard: session ? <DashboardView token={session.token} /> : <></>,
       products: session ? (
         <ProductsView
           token={session.token}
@@ -74,7 +83,7 @@ export function App() {
           createRequestId={productCreateRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
       cutTypes: session ? (
         <CutTypesView
@@ -83,7 +92,7 @@ export function App() {
           createRequestId={cutTypeCreateRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
       customers: session ? (
         <CustomersView
@@ -92,7 +101,7 @@ export function App() {
           createRequestId={customerCreateRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
       orders: session ? (
         <OrdersView
@@ -101,7 +110,7 @@ export function App() {
           createRequestId={orderCreateRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
       purchases: session ? (
         <PurchasesView
@@ -110,7 +119,7 @@ export function App() {
           createRequestId={purchaseCreateRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
       production: <ProductionView />,
       waste: <WasteView />,
@@ -122,9 +131,9 @@ export function App() {
           createAdjustmentRequestId={stockAdjustRequestId}
         />
       ) : (
-        <DashboardView />
+        <></>
       ),
-      members: session ? <MembersView token={session.token} /> : <DashboardView />,
+      members: session ? <MembersView token={session.token} /> : <></>,
     }
 
     return views[activeSection]
@@ -257,27 +266,17 @@ export function App() {
   }
 
   const metadata = sectionMetadata[activeSection]
-  const isPrimaryActionDisabled =
-    (activeSection === 'products' ||
-      activeSection === 'cutTypes' ||
-      activeSection === 'customers' ||
-      activeSection === 'orders' ||
-      activeSection === 'purchases' ||
-      activeSection === 'stock') &&
-    !session.organization.capabilities.canWriteProducts
-  const primaryActionDisabledReason =
-    (activeSection === 'products' ||
-      activeSection === 'cutTypes' ||
-      activeSection === 'customers' ||
-      activeSection === 'orders' ||
-      activeSection === 'purchases' ||
-      activeSection === 'stock') &&
-    isPrimaryActionDisabled
+  const isPrimaryActionImplemented = sectionsWithPrimaryAction.includes(activeSection)
+  const canWrite = session.organization.capabilities.canWriteProducts
+  const primaryActionDisabledReason = !isPrimaryActionImplemented
+    ? 'Próximamente'
+    : !canWrite
       ? 'Requiere permisos de owner, admin u operator.'
       : undefined
+  const isPrimaryActionDisabled = primaryActionDisabledReason !== undefined
 
   function handlePrimaryAction() {
-    if (!session) {
+    if (!session || isPrimaryActionDisabled) {
       return
     }
 
@@ -322,8 +321,6 @@ export function App() {
       }
       return
     }
-
-    window.alert(`${metadata.action}: flujo pendiente de implementación.`)
   }
 
   return (

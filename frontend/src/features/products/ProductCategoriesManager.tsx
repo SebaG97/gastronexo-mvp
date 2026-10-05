@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, StatusBadge } from '../../shared/components'
+import { Button, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createProductCategory,
@@ -181,51 +181,53 @@ export function ProductCategoriesManager({ token, canWriteProducts, onChanged }:
       {!isLoading && categories.length === 0 ? <p>No hay categorías para el filtro seleccionado.</p> : null}
 
       {!isLoading && categories.length > 0 ? (
-        <table className="products-table">
-          <thead>
-            <tr>
-              <th>Categoría</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((category) => (
-              <tr key={category.id}>
-                <td>{category.name}</td>
-                <td>
-                  <StatusBadge tone={category.isActive ? 'success' : 'warning'}>
-                    {category.isActive ? 'Activa' : 'Inactiva'}
-                  </StatusBadge>
-                </td>
-                <td className="products-table__actions">
-                  {canWriteProducts ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={pendingCategoryId === category.id}
-                        onClick={() => void handleRenameCategory(category)}
-                      >
-                        Renombrar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={pendingCategoryId === category.id}
-                        onClick={() => void handleToggleStatus(category)}
-                      >
-                        {category.isActive ? 'Inactivar' : 'Activar'}
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="products-table__no-actions">Solo lectura</span>
-                  )}
-                </td>
+        <TableScroll>
+          <table className="products-table">
+            <thead>
+              <tr>
+                <th>Categoría</th>
+                <th>Estado</th>
+                <th>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {categories.map((category) => (
+                <tr key={category.id}>
+                  <td>{category.name}</td>
+                  <td>
+                    <StatusBadge tone={category.isActive ? 'success' : 'warning'}>
+                      {category.isActive ? 'Activa' : 'Inactiva'}
+                    </StatusBadge>
+                  </td>
+                  <td className="products-table__actions">
+                    {canWriteProducts ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={pendingCategoryId === category.id}
+                          onClick={() => void handleRenameCategory(category)}
+                        >
+                          Renombrar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={pendingCategoryId === category.id}
+                          onClick={() => void handleToggleStatus(category)}
+                        >
+                          {category.isActive ? 'Inactivar' : 'Activar'}
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="products-table__no-actions">Solo lectura</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       ) : null}
 
       {errorMessage ? (

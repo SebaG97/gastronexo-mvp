@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createCustomer,
@@ -83,6 +83,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingCustomerId, setPendingCustomerId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -105,7 +106,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
 
   async function loadCustomers() {
     setIsLoading(true)
-    setErrorMessage(null)
+    setLoadError(null)
 
     try {
       const response = await getCustomers(
@@ -120,8 +121,8 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
       setCustomers(response.customers)
       setTotal(response.pagination.total)
       setTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudieron cargar los clientes.')
+    } catch {
+      setLoadError('No se pudieron cargar los clientes.')
       setCustomers([])
     } finally {
       setIsLoading(false)
@@ -229,7 +230,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
         </Panel>
       ) : null}
 
-      <Panel className="customers-panel" title="Directorio" action={<span>Total: {total}</span>}>
+      <Panel className="customers-panel" title="Directorio" action={loadError ? undefined : <span>Total: {total}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
             Buscar cliente
@@ -245,52 +246,57 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
           </label>
         </div>
 
+        {loadError ? <LoadErrorState message={loadError} onRetry={() => void loadCustomers()} isRetrying={isLoading} /> : null}
         {isLoading ? <p>Cargando clientes...</p> : null}
-        {!isLoading && customers.length === 0 ? <p>No hay clientes para los filtros seleccionados.</p> : null}
+        {!isLoading && !loadError && customers.length === 0 ? <p>No hay clientes para los filtros seleccionados.</p> : null}
 
         {!isLoading && customers.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Razon social</th>
-                <th>Documento</th>
-                <th>Contacto</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers.map((customer) => (
-                <tr key={customer.id}>
-                  <td>{customer.name}</td>
-                  <td>{customer.businessName ?? 'Sin dato'}</td>
-                  <td>{customer.documentNumber ?? 'Sin dato'}</td>
-                  <td>{customer.phone ?? customer.email ?? 'Sin dato'}</td>
-                  <td><StatusBadge tone={customer.isActive ? 'success' : 'warning'}>{customer.isActive ? 'Activo' : 'Inactivo'}</StatusBadge></td>
-                  <td className="products-table__actions">
-                    {canWriteCustomers ? (
-                      <>
-                        <Button type="button" variant="secondary" disabled={pendingCustomerId === customer.id} onClick={() => { setFormMode({ type: 'edit', customer }); setForm(customerToForm(customer)) }}>Editar</Button>
-                        <Button type="button" variant="secondary" disabled={pendingCustomerId === customer.id} onClick={() => void handleToggleStatus(customer)}>{customer.isActive ? 'Inactivar' : 'Activar'}</Button>
-                      </>
-                    ) : (
-                      <span className="products-table__no-actions">Solo lectura</span>
-                    )}
-                  </td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Razon social</th>
+                  <th>Documento</th>
+                  <th>Contacto</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {customers.map((customer) => (
+                  <tr key={customer.id}>
+                    <td>{customer.name}</td>
+                    <td>{customer.businessName ?? 'Sin dato'}</td>
+                    <td>{customer.documentNumber ?? 'Sin dato'}</td>
+                    <td>{customer.phone ?? customer.email ?? 'Sin dato'}</td>
+                    <td><StatusBadge tone={customer.isActive ? 'success' : 'warning'}>{customer.isActive ? 'Activo' : 'Inactivo'}</StatusBadge></td>
+                    <td className="products-table__actions">
+                      {canWriteCustomers ? (
+                        <>
+                          <Button type="button" variant="secondary" disabled={pendingCustomerId === customer.id} onClick={() => { setFormMode({ type: 'edit', customer }); setForm(customerToForm(customer)) }}>Editar</Button>
+                          <Button type="button" variant="secondary" disabled={pendingCustomerId === customer.id} onClick={() => void handleToggleStatus(customer)}>{customer.isActive ? 'Inactivar' : 'Activar'}</Button>
+                        </>
+                      ) : (
+                        <span className="products-table__no-actions">Solo lectura</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
-          <div className="products-pagination__actions">
-            <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
-            <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>
+        {loadError ? null : (
+          <div className="products-pagination">
+            <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
+              <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       {errorMessage ? <p className="members-message members-message--error" role="alert" aria-live="polite">{errorMessage}</p> : null}

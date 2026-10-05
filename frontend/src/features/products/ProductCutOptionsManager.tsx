@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, StatusBadge } from '../../shared/components'
+import { Button, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createProductCutOption,
@@ -148,64 +148,66 @@ export function ProductCutOptionsManager({
       ) : null}
 
       {!isLoading && cutOptions.length > 0 ? (
-        <table className="products-table">
-          <thead>
-            <tr>
-              <th>Corte</th>
-              <th>Default</th>
-              <th>Estado</th>
-              <th>Tipo global</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cutOptions.map((option) => (
-              <tr key={option.id}>
-                <td>{option.cutTypeName}</td>
-                <td>{option.isDefault && option.isActive ? 'Sí' : 'No'}</td>
-                <td>
-                  <StatusBadge tone={option.isActive ? 'success' : 'warning'}>
-                    {option.isActive ? 'Activo' : 'Inactivo'}
-                  </StatusBadge>
-                </td>
-                <td>
-                  <StatusBadge tone={option.cutTypeIsActive ? 'success' : 'warning'}>
-                    {option.cutTypeIsActive ? 'Activo' : 'Inactivo'}
-                  </StatusBadge>
-                </td>
-                <td className="products-table__actions">
-                  {canWriteProducts ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={
-                          pendingOptionId === option.id ||
-                          !option.isActive ||
-                          !option.cutTypeIsActive ||
-                          option.isDefault
-                        }
-                        onClick={() => void handleUpdateOption(option, { isDefault: true })}
-                      >
-                        Marcar default
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={pendingOptionId === option.id || (!option.cutTypeIsActive && !option.isActive)}
-                        onClick={() => void handleUpdateOption(option, { isActive: !option.isActive })}
-                      >
-                        {option.isActive ? 'Inactivar' : 'Activar'}
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="products-table__no-actions">Solo lectura</span>
-                  )}
-                </td>
+        <TableScroll>
+          <table className="products-table">
+            <thead>
+              <tr>
+                <th>Corte</th>
+                <th>Default</th>
+                <th>Estado</th>
+                <th>Tipo global</th>
+                <th>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {cutOptions.map((option) => (
+                <tr key={option.id}>
+                  <td>{option.cutTypeName}</td>
+                  <td>{option.isDefault && option.isActive ? 'Sí' : 'No'}</td>
+                  <td>
+                    <StatusBadge tone={option.isActive ? 'success' : 'warning'}>
+                      {option.isActive ? 'Activo' : 'Inactivo'}
+                    </StatusBadge>
+                  </td>
+                  <td>
+                    <StatusBadge tone={option.cutTypeIsActive ? 'success' : 'warning'}>
+                      {option.cutTypeIsActive ? 'Activo' : 'Inactivo'}
+                    </StatusBadge>
+                  </td>
+                  <td className="products-table__actions">
+                    {canWriteProducts ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={
+                            pendingOptionId === option.id ||
+                            !option.isActive ||
+                            !option.cutTypeIsActive ||
+                            option.isDefault
+                          }
+                          onClick={() => void handleUpdateOption(option, { isDefault: true })}
+                        >
+                          Marcar default
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={pendingOptionId === option.id || (!option.cutTypeIsActive && !option.isActive)}
+                          onClick={() => void handleUpdateOption(option, { isActive: !option.isActive })}
+                        >
+                          {option.isActive ? 'Inactivar' : 'Activar'}
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="products-table__no-actions">Solo lectura</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       ) : null}
 
       {canWriteProducts && product.isActive ? (

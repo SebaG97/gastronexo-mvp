@@ -1,3 +1,5 @@
 export { Button } from './Button'
+export { LoadErrorState } from './LoadErrorState'
 export { Panel } from './Panel'
 export { StatusBadge } from './StatusBadge'
+export { TableScroll } from './TableScroll'

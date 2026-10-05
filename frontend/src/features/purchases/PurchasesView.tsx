@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createPurchase,
@@ -137,6 +137,9 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
   const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false)
   const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [purchasesLoadError, setPurchasesLoadError] = useState<string | null>(null)
+  const [suppliersLoadError, setSuppliersLoadError] = useState<string | null>(null)
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const purchaseTotalAmount = useMemo(
@@ -175,7 +178,7 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
 
   async function loadPurchases() {
     setIsLoadingPurchases(true)
-    setErrorMessage(null)
+    setPurchasesLoadError(null)
 
     try {
       const response = await getPurchases(
@@ -185,8 +188,8 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
       setPurchases(response.purchases)
       setPurchaseTotal(response.pagination.total)
       setPurchaseTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudieron cargar las compras.')
+    } catch {
+      setPurchasesLoadError('No se pudieron cargar las compras.')
       setPurchases([])
     } finally {
       setIsLoadingPurchases(false)
@@ -194,6 +197,9 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
   }
 
   async function loadSuppliers() {
+    setSuppliersLoadError(null)
+    setIsLoadingSuppliers(true)
+
     try {
       const [activeResponse, listResponse] = await Promise.all([
         getSuppliers({ status: 'active', page: 1, pageSize: 100 }, token),
@@ -216,10 +222,12 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
       if (!purchaseSupplierId && activeResponse.suppliers[0]) {
         setPurchaseSupplierId(activeResponse.suppliers[0].id)
       }
-    } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudieron cargar los proveedores.')
+    } catch {
+      setSuppliersLoadError('No se pudieron cargar los proveedores.')
       setSuppliers([])
       setActiveSuppliers([])
+    } finally {
+      setIsLoadingSuppliers(false)
     }
   }
 
@@ -518,7 +526,7 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
         </Panel>
       ) : null}
 
-      <Panel className="purchases-panel" title="Historial de compras" action={<span>Total: {purchaseTotal}</span>}>
+      <Panel className="purchases-panel" title="Historial de compras" action={purchasesLoadError ? undefined : <span>Total: {purchaseTotal}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
             Buscar por factura o proveedor
@@ -526,47 +534,52 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
           </label>
         </div>
 
+        {purchasesLoadError ? <LoadErrorState message={purchasesLoadError} onRetry={() => void loadPurchases()} isRetrying={isLoadingPurchases} /> : null}
         {isLoadingPurchases ? <p>Cargando compras...</p> : null}
-        {!isLoadingPurchases && purchases.length === 0 ? <p>No hay compras para los filtros seleccionados.</p> : null}
+        {!isLoadingPurchases && !purchasesLoadError && purchases.length === 0 ? <p>No hay compras para los filtros seleccionados.</p> : null}
 
         {!isLoadingPurchases && purchases.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Proveedor</th>
-                <th>Depósito</th>
-                <th>Factura</th>
-                <th>Total</th>
-                <th>Usuario</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchases.map((purchase) => (
-                <tr key={purchase.id}>
-                  <td>{new Date(purchase.purchaseDate).toLocaleDateString('es-PY')}</td>
-                  <td>{purchase.supplierName}</td>
-                  <td>{purchase.warehouseName}</td>
-                  <td>{purchase.invoiceNumber}</td>
-                  <td>{formatMoney(purchase.totalAmount)}</td>
-                  <td>{purchase.createdByUserName}</td>
-                  <td className="products-table__actions">
-                    <Button type="button" variant="secondary" disabled={isLoadingDetail} onClick={() => void handleSelectPurchase(purchase.id)}>Ver detalle</Button>
-                  </td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Proveedor</th>
+                  <th>Depósito</th>
+                  <th>Factura</th>
+                  <th>Total</th>
+                  <th>Usuario</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {purchases.map((purchase) => (
+                  <tr key={purchase.id}>
+                    <td>{new Date(purchase.purchaseDate).toLocaleDateString('es-PY')}</td>
+                    <td>{purchase.supplierName}</td>
+                    <td>{purchase.warehouseName}</td>
+                    <td>{purchase.invoiceNumber}</td>
+                    <td>{formatMoney(purchase.totalAmount)}</td>
+                    <td>{purchase.createdByUserName}</td>
+                    <td className="products-table__actions">
+                      <Button type="button" variant="secondary" disabled={isLoadingDetail} onClick={() => void handleSelectPurchase(purchase.id)}>Ver detalle</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>Página {purchasePage} de {Math.max(purchaseTotalPages, 1)}</span>
-          <div className="products-pagination__actions">
-            <Button type="button" variant="secondary" disabled={purchasePage <= 1} onClick={() => setPurchasePage((current) => current - 1)}>Anterior</Button>
-            <Button type="button" variant="secondary" disabled={purchaseTotalPages === 0 || purchasePage >= purchaseTotalPages} onClick={() => setPurchasePage((current) => current + 1)}>Siguiente</Button>
+        {purchasesLoadError ? null : (
+          <div className="products-pagination">
+            <span>Página {purchasePage} de {Math.max(purchaseTotalPages, 1)}</span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={purchasePage <= 1} onClick={() => setPurchasePage((current) => current - 1)}>Anterior</Button>
+              <Button type="button" variant="secondary" disabled={purchaseTotalPages === 0 || purchasePage >= purchaseTotalPages} onClick={() => setPurchasePage((current) => current + 1)}>Siguiente</Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       {selectedPurchase ? (
@@ -577,28 +590,30 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
             <span>Pago: <strong>{selectedPurchase.paymentMethod}</strong></span>
             <span>Total: <strong>{formatMoney(selectedPurchase.totalAmount)}</strong></span>
           </div>
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Materia prima</th>
-                <th>Unidad</th>
-                <th>Cantidad</th>
-                <th>Costo unitario</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedPurchase.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.productName}</td>
-                  <td>{productUnitLabelByKey[item.unit]}</td>
-                  <td>{formatQuantity(item.quantity)}</td>
-                  <td>{formatMoney(item.unitCost)}</td>
-                  <td>{formatMoney(item.lineTotal)}</td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Materia prima</th>
+                  <th>Unidad</th>
+                  <th>Cantidad</th>
+                  <th>Costo unitario</th>
+                  <th>Subtotal</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {selectedPurchase.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.productName}</td>
+                    <td>{productUnitLabelByKey[item.unit]}</td>
+                    <td>{formatQuantity(item.quantity)}</td>
+                    <td>{formatMoney(item.unitCost)}</td>
+                    <td>{formatMoney(item.lineTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
           {selectedPurchase.notes ? <p className="purchase-detail-notes">{selectedPurchase.notes}</p> : null}
         </Panel>
       ) : null}
@@ -664,48 +679,53 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
           </label>
         </div>
 
-        {suppliers.length === 0 ? <p>No hay proveedores para los filtros seleccionados.</p> : null}
+        {suppliersLoadError ? <LoadErrorState message={suppliersLoadError} onRetry={() => void loadSuppliers()} isRetrying={isLoadingSuppliers} /> : null}
+        {!isLoadingSuppliers && !suppliersLoadError && suppliers.length === 0 ? <p>No hay proveedores para los filtros seleccionados.</p> : null}
         {suppliers.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>RUC / documento</th>
-                <th>Email</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {suppliers.map((supplier) => (
-                <tr key={supplier.id}>
-                  <td>{supplier.name}</td>
-                  <td>{supplier.taxId ?? 'Sin dato'}</td>
-                  <td>{supplier.email ?? 'Sin dato'}</td>
-                  <td><StatusBadge tone={supplier.isActive ? 'success' : 'warning'}>{supplier.isActive ? 'Activo' : 'Inactivo'}</StatusBadge></td>
-                  <td className="products-table__actions">
-                    {canWritePurchases ? (
-                      <>
-                        <Button type="button" variant="secondary" disabled={pendingSupplierId === supplier.id} onClick={() => { setSupplierFormMode({ type: 'edit', supplier }); setSupplierForm(supplierToForm(supplier)) }}>Editar</Button>
-                        <Button type="button" variant="secondary" disabled={pendingSupplierId === supplier.id} onClick={() => void handleToggleSupplierStatus(supplier)}>{supplier.isActive ? 'Inactivar' : 'Activar'}</Button>
-                      </>
-                    ) : (
-                      <span className="products-table__no-actions">Solo lectura</span>
-                    )}
-                  </td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>RUC / documento</th>
+                  <th>Email</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {suppliers.map((supplier) => (
+                  <tr key={supplier.id}>
+                    <td>{supplier.name}</td>
+                    <td>{supplier.taxId ?? 'Sin dato'}</td>
+                    <td>{supplier.email ?? 'Sin dato'}</td>
+                    <td><StatusBadge tone={supplier.isActive ? 'success' : 'warning'}>{supplier.isActive ? 'Activo' : 'Inactivo'}</StatusBadge></td>
+                    <td className="products-table__actions">
+                      {canWritePurchases ? (
+                        <>
+                          <Button type="button" variant="secondary" disabled={pendingSupplierId === supplier.id} onClick={() => { setSupplierFormMode({ type: 'edit', supplier }); setSupplierForm(supplierToForm(supplier)) }}>Editar</Button>
+                          <Button type="button" variant="secondary" disabled={pendingSupplierId === supplier.id} onClick={() => void handleToggleSupplierStatus(supplier)}>{supplier.isActive ? 'Inactivar' : 'Activar'}</Button>
+                        </>
+                      ) : (
+                        <span className="products-table__no-actions">Solo lectura</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>Página {supplierPage} de {Math.max(supplierTotalPages, 1)} · Total: {supplierTotal}</span>
-          <div className="products-pagination__actions">
-            <Button type="button" variant="secondary" disabled={supplierPage <= 1} onClick={() => setSupplierPage((current) => current - 1)}>Anterior</Button>
-            <Button type="button" variant="secondary" disabled={supplierTotalPages === 0 || supplierPage >= supplierTotalPages} onClick={() => setSupplierPage((current) => current + 1)}>Siguiente</Button>
+        {suppliersLoadError ? null : (
+          <div className="products-pagination">
+            <span>Página {supplierPage} de {Math.max(supplierTotalPages, 1)} · Total: {supplierTotal}</span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={supplierPage <= 1} onClick={() => setSupplierPage((current) => current - 1)}>Anterior</Button>
+              <Button type="button" variant="secondary" disabled={supplierTotalPages === 0 || supplierPage >= supplierTotalPages} onClick={() => setSupplierPage((current) => current + 1)}>Siguiente</Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       {errorMessage ? <p className="members-message members-message--error" role="alert" aria-live="polite">{errorMessage}</p> : null}

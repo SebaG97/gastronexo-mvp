@@ -1,5 +1,46 @@
 # Functional Readiness Plan
 
+## Misión 5.4 - Endurecimiento de UX (H2, H3, H4, H6)
+
+Cierra los hallazgos de mayor impacto de la verificación 5.3, sin rediseño ni features nuevas.
+
+### Fase 0 - Commit de 5.3
+
+- `git diff --stat app.css`: 1 línea (sin problema CRLF/LF; `core.autocrlf=true` ya estaba configurado).
+- Doc sin credenciales (solo placeholders `<ts>`). En las capturas, `miembros-*`, `vacio-miembros-1440` y `login-error-1440` mostraban emails de prueba; se volvieron a tomar con esos campos enmascarados.
+- `docs/visual-qa`: 4.6 MB, no hizo falta optimizar.
+- Commits `ebc47ed` (fix del sidebar) y `a3c30e0` (docs 5.3). Se eliminó un `.git/index.lock` huérfano (0 bytes, de antes de la sesión, sin procesos git activos).
+
+### Cambios
+
+| Hallazgo | Cambio | Archivos |
+| --- | --- | --- |
+| H3 - Dashboard con cifras inventadas | Se quitaron todos los valores fijos (KPIs de facturación, gráficos de ejemplo y alertas ficticias). Ahora muestra solo datos reales tomados de `pagination.total` de endpoints existentes: productos activos, clientes activos, pedidos abiertos (`new` + `confirmed` + `preparing` + `ready`) y compras del mes. Suma un panel "Pedidos por estado" (6 estados) y "Compras recientes" (últimas 5, o "Sin compras registradas todavía."). Facturación, mermas y alertas muestran "Sin datos todavía". Tiene estados de carga y de error con reintento. En una organización vacía todo queda en 0. | `features/dashboard/DashboardView.tsx`, `app/App.tsx`, `app.css` |
+| H4 - `window.alert` "pendiente" | Se eliminó el `window.alert`. La acción primaria solo está habilitada en las secciones con flujo real (Productos, Tipos de corte, Clientes, Pedidos, Compras, Stock). En Dashboard, Producción, Mermas, Ventas y Miembros queda deshabilitada con el motivo "Próximamente"; para `viewer` en los módulos reales, con "Requiere permisos de owner, admin u operator.". El motivo ahora es **visible** junto al botón (`.topbar__action-hint`, enlazado con `aria-describedby`), además del `title`. | `app/App.tsx`, `app/components/SystemShell.tsx`, `app.css` |
+| H2 - desborde de tablas | Nuevo componente compartido `TableScroll` (`.table-scroll { overflow-x: auto }`) que envuelve las 14 tablas (Productos, Categorías, Cortes de producto, Tipos de corte, Clientes, Pedidos ×2, Compras ×3, Stock ×3, Miembros, Dashboard). Causa raíz adicional: las páginas son grids y `.panel` crecía hasta el ancho de la tabla; se resolvió con `.panel { min-width: 0 }`. `.topbar` y `.topbar__actions` pasan a `flex-wrap`. La fila de ítem de pedido pasa a 3 columnas en ≤1050px (antes desbordaba a 1024px con el formulario abierto). En ≤760px, `.shell` usa `grid-template-rows: auto 1fr` para que el sidebar no se estire en pantallas cortas. | `shared/components/TableScroll.tsx`, 9 vistas, `app.css` |
+| H6 - error de carga mostrado como lista vacía | Nuevo componente compartido `LoadErrorState` (mensaje claro, botón "Reintentar", `role="alert"` + `aria-live`). Cada listado tiene un estado `loadError` separado del `errorMessage` de las mutaciones. Si falla la carga se ocultan el total, la tabla, el estado vacío y la paginación, y el error aparece dentro del panel. Aplicado a Productos, Clientes, Pedidos, Compras (compras y proveedores), Stock (depósitos, inventario e historial de ajustes) y Dashboard. Ya no se muestra el mensaje crudo de la API en errores de carga. | `shared/components/LoadErrorState.tsx`, vistas citadas |
+
+Quedan `window.confirm` solo como confirmación de acciones destructivas (inactivar, cancelar pedido), un patrón previo que no es de "pendiente".
+
+### Verificación
+
+- Builds: `backend npm run build` OK; `frontend npm run build` OK (JS 253.52 kB / 69.44 kB gzip, CSS 15.87 kB).
+- Desborde: `scrollWidth <= clientWidth` en las 11 secciones a 1024 y 390 px, y también con estados abiertos (detalle de pedido, formulario de pedido, edición de producto con cortes, formulario de compra). Antes de 5.4: Productos 1.095px a 1024; a 390 entre 472 y 774px.
+- Errores simulados (500 interceptado) en Productos, Clientes, Pedidos, Compras, Stock y Dashboard: muestran el error en el panel sin "Total"; "Reintentar" vuelve a pedir los datos y la tabla reaparece (por ejemplo, Productos 10 filas, Pedidos 5).
+- Viewer (`Demo QA`): botón primario deshabilitado en todas las secciones, con "Requiere permisos…" en los módulos reales y "Próximamente" en el resto; "Miembros" sigue oculto.
+- Consola/red: sin errores salvo los 500 simulados y el caso preexistente H18.
+- Screenshots en `docs/visual-qa/5.4/` (43 PNG, 2.8 MB): secciones afectadas en 1440/1024/390; `dashboard-antes-1440` vs `dashboard-1440`; `productos-error-antes-1440` vs `productos-error-1440` / `-390`; `*-error-1440`; `dashboard-org-vacia-1440`; `viewer-*-1440`; estados abiertos a 390.
+
+### Hallazgo nuevo
+
+| # | Prioridad | Tipo | Pantalla | Archivo | Hallazgo |
+| --- | --- | --- | --- | --- | --- |
+| H18 | Media | Bug | Stock | `features/stock/StockView.tsx` | Si se cambia de organización con Stock abierto, la vista conserva el `selectedWarehouseId` de la org anterior y pide `/api/inventory?warehouseId=<otro>` → 404 (inventario y ajustes). Es preexistente; con 5.4 se ve como error con "Reintentar", que repite el 404 hasta que se recarga la sección. Propuesta: reiniciar el depósito seleccionado al cambiar `token`/organización. |
+
+### Estado
+
+H2, H3, H4 y H6 cerrados. Pendientes: H5, H7–H17 y H18.
+
 ## Misión 5.3 - Entorno local y verificación visual completa
 
 Cierra el pendiente de 5.2 ("validación visual interactiva con screenshot"). Sin rediseños ni features nuevas.
@@ -68,11 +109,11 @@ En `docs/visual-qa/` (69 PNG, ~4.6 MB, página completa). En `miembros-*`, `vaci
 
 | # | Prioridad | Tipo | Pantalla | Archivo | Hallazgo |
 | --- | --- | --- | --- | --- | --- |
-| H2 | Alta | UX/bug | Productos (1024 y 390), Pedidos, Stock, Compras, Clientes, Miembros, Producción (390) | `app.css` (`.panel__body`, `.topbar__actions`) | Las tablas no tienen contenedor con scroll y desbordan la página: Productos 1.095px a 1024 de ancho y 774px a 390; Pedidos/Stock 630px; Compras 545px; Clientes 510px; Miembros 472px; Producción 405px (por la topbar). Propuesta: `overflow-x: auto` en el contenedor de las tablas y `flex-wrap` en `.topbar__actions`. |
-| H3 | Alta | UX | Dashboard | `features/dashboard/DashboardView.tsx` | Muestra métricas ficticias fijas (Gs. 1.850.000, "6 insumos alcanzaron su punto de reposición", etc.) también en una organización vacía. Se pueden confundir con datos reales. |
-| H4 | Alta | UX | Dashboard, Producción, Mermas, Ventas, Miembros | `app/App.tsx:326` | La acción primaria ("Ver reporte", "Nueva producción", "Registrar merma", "Registrar venta", "Gestionar accesos") está habilitada, incluso para viewer, y abre `window.alert("… flujo pendiente de implementación.")`. |
+| H2 | Alta · **Resuelto en 5.4** | UX/bug | Productos (1024 y 390), Pedidos, Stock, Compras, Clientes, Miembros, Producción (390) | `app.css` (`.panel__body`, `.topbar__actions`) | Las tablas no tienen contenedor con scroll y desbordan la página: Productos 1.095px a 1024 de ancho y 774px a 390; Pedidos/Stock 630px; Compras 545px; Clientes 510px; Miembros 472px; Producción 405px (por la topbar). Propuesta: `overflow-x: auto` en el contenedor de las tablas y `flex-wrap` en `.topbar__actions`. |
+| H3 | Alta · **Resuelto en 5.4** | UX | Dashboard | `features/dashboard/DashboardView.tsx` | Muestra métricas ficticias fijas (Gs. 1.850.000, "6 insumos alcanzaron su punto de reposición", etc.) también en una organización vacía. Se pueden confundir con datos reales. |
+| H4 | Alta · **Resuelto en 5.4** | UX | Dashboard, Producción, Mermas, Ventas, Miembros | `app/App.tsx:326` | La acción primaria ("Ver reporte", "Nueva producción", "Registrar merma", "Registrar venta", "Gestionar accesos") está habilitada, incluso para viewer, y abre `window.alert("… flujo pendiente de implementación.")`. |
 | H5 | Media | UX/texto | Producción, Mermas, Ventas | `features/shared/PlaceholderModule.tsx:36` | Un badge verde dice "Base funcional lista" en módulos sin funcionalidad. |
-| H6 | Media | UX | Productos (patrón compartido) | `features/products/ProductsView.tsx:406` | Con error de carga, el catálogo muestra "Total: 0 / Página 1 de 1" como si estuviera vacío. El error aparece al pie de la página, lejos de la tabla, sin opción de reintentar y con el mensaje de la API tal cual. |
+| H6 | Media · **Resuelto en 5.4** | UX | Productos (patrón compartido) | `features/products/ProductsView.tsx:406` | Con error de carga, el catálogo muestra "Total: 0 / Página 1 de 1" como si estuviera vacío. El error aparece al pie de la página, lejos de la tabla, sin opción de reintentar y con el mensaje de la API tal cual. |
 | H7 | Media | UX | Login | `app/components/LoginView.tsx` | No hay UI de registro ni de creación de organización; solo se puede por API. |
 | H8 | Media | UX/texto | Formularios (Productos, Login, Pedidos) | `features/products/ProductForm.tsx` | Los atributos `required` nativos muestran el globo del navegador en el idioma del navegador ("Please fill out this field.") antes que los mensajes propios `.form-error`. |
 | H9 | Media | a11y | Todas | `shared/styles/app.css:65` | Falta un estilo `:focus-visible` propio para botones, ítems de navegación y selects; solo los inputs de `.field` tienen anillo de foco con la marca. |

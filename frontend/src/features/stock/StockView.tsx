@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createInventoryAdjustment,
@@ -89,6 +89,9 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
   const [adjustmentProductOptions, setAdjustmentProductOptions] = useState<InventoryBalance[]>([])
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [warehousesLoadError, setWarehousesLoadError] = useState<string | null>(null)
+  const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null)
+  const [adjustmentsLoadError, setAdjustmentsLoadError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const activeWarehouses = useMemo(() => warehouses.filter((warehouse) => warehouse.isActive), [warehouses])
@@ -119,8 +122,9 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
     return nextQuantity - adjustmentPreviousQuantity
   }, [adjustmentNewQuantity, adjustmentPreviousQuantity])
 
-  const canShowInventoryEmpty = !isLoadingInventory && balances.length === 0 && selectedWarehouseId
-  const canShowAdjustmentEmpty = !isLoadingAdjustments && adjustments.length === 0
+  const canShowInventoryEmpty =
+    !isLoadingInventory && !inventoryLoadError && balances.length === 0 && selectedWarehouseId
+  const canShowAdjustmentEmpty = !isLoadingAdjustments && !adjustmentsLoadError && adjustments.length === 0
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -144,6 +148,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
 
   async function loadWarehouses() {
     setIsLoadingWarehouses(true)
+    setWarehousesLoadError(null)
 
     try {
       const response = await getWarehouses('all', token)
@@ -159,12 +164,9 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
       if (!adjustmentWarehouseId) {
         setAdjustmentWarehouseId(nextSelectedWarehouseId)
       }
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorMessage(error.message)
-      } else {
-        setErrorMessage('No se pudieron cargar los depósitos.')
-      }
+    } catch {
+      setWarehouses([])
+      setWarehousesLoadError('No se pudieron cargar los depósitos.')
     } finally {
       setIsLoadingWarehouses(false)
     }
@@ -179,6 +181,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
     }
 
     setIsLoadingInventory(true)
+    setInventoryLoadError(null)
 
     try {
       const response = await getInventoryBalances(
@@ -195,12 +198,8 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
       setBalances(response.balances)
       setInventoryTotal(response.pagination.total)
       setInventoryTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorMessage(error.message)
-      } else {
-        setErrorMessage('No se pudo cargar el inventario.')
-      }
+    } catch {
+      setInventoryLoadError('No se pudo cargar el inventario.')
       setBalances([])
     } finally {
       setIsLoadingInventory(false)
@@ -241,6 +240,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
     }
 
     setIsLoadingAdjustments(true)
+    setAdjustmentsLoadError(null)
 
     try {
       const response = await getInventoryAdjustments(
@@ -257,12 +257,8 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
 
       setAdjustments(response.adjustments)
       setAdjustmentsTotalPages(response.pagination.totalPages)
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorMessage(error.message)
-      } else {
-        setErrorMessage('No se pudo cargar el historial de ajustes.')
-      }
+    } catch {
+      setAdjustmentsLoadError('No se pudo cargar el historial de ajustes.')
       setAdjustments([])
     } finally {
       setIsLoadingAdjustments(false)
@@ -493,64 +489,73 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
           </label>
         </div>
 
+        {warehousesLoadError ? (
+          <LoadErrorState
+            message={warehousesLoadError}
+            onRetry={() => void loadWarehouses()}
+            isRetrying={isLoadingWarehouses}
+          />
+        ) : null}
         {isLoadingWarehouses ? <p>Cargando depósitos...</p> : null}
 
         {!isLoadingWarehouses && warehouses.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {warehouses
-                .filter((warehouse) => {
-                  if (warehouseStatusFilter === 'all') {
-                    return true
-                  }
-                  if (warehouseStatusFilter === 'active') {
-                    return warehouse.isActive
-                  }
-                  return !warehouse.isActive
-                })
-                .map((warehouse) => (
-                  <tr key={warehouse.id}>
-                    <td>{warehouse.name}</td>
-                    <td>
-                      <StatusBadge tone={warehouse.isActive ? 'success' : 'warning'}>
-                        {warehouse.isActive ? 'Activo' : 'Inactivo'}
-                      </StatusBadge>
-                    </td>
-                    <td className="products-table__actions">
-                      {canWriteInventory ? (
-                        <>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={pendingWarehouseId === warehouse.id}
-                            onClick={() => void handleRenameWarehouse(warehouse)}
-                          >
-                            Renombrar
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={pendingWarehouseId === warehouse.id}
-                            onClick={() => void handleToggleWarehouseStatus(warehouse)}
-                          >
-                            {warehouse.isActive ? 'Inactivar' : 'Activar'}
-                          </Button>
-                        </>
-                      ) : (
-                        <span className="products-table__no-actions">Solo lectura</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {warehouses
+                  .filter((warehouse) => {
+                    if (warehouseStatusFilter === 'all') {
+                      return true
+                    }
+                    if (warehouseStatusFilter === 'active') {
+                      return warehouse.isActive
+                    }
+                    return !warehouse.isActive
+                  })
+                  .map((warehouse) => (
+                    <tr key={warehouse.id}>
+                      <td>{warehouse.name}</td>
+                      <td>
+                        <StatusBadge tone={warehouse.isActive ? 'success' : 'warning'}>
+                          {warehouse.isActive ? 'Activo' : 'Inactivo'}
+                        </StatusBadge>
+                      </td>
+                      <td className="products-table__actions">
+                        {canWriteInventory ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={pendingWarehouseId === warehouse.id}
+                              onClick={() => void handleRenameWarehouse(warehouse)}
+                            >
+                              Renombrar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={pendingWarehouseId === warehouse.id}
+                              onClick={() => void handleToggleWarehouseStatus(warehouse)}
+                            >
+                              {warehouse.isActive ? 'Inactivar' : 'Activar'}
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="products-table__no-actions">Solo lectura</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
       </Panel>
 
@@ -641,7 +646,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
         </Panel>
       ) : null}
 
-      <Panel className="stock-panel" title="Inventario actual" action={<span>Total: {inventoryTotal}</span>}>
+      <Panel className="stock-panel" title="Inventario actual" action={inventoryLoadError ? undefined : <span>Total: {inventoryTotal}</span>}>
         <div className="stock-inventory__toolbar">
           <label className="field stock-inventory__search">
             Buscar por nombre o SKU
@@ -670,61 +675,72 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
           </label>
         </div>
 
+        {inventoryLoadError ? (
+          <LoadErrorState
+            message={inventoryLoadError}
+            onRetry={() => void loadInventory()}
+            isRetrying={isLoadingInventory}
+          />
+        ) : null}
         {isLoadingInventory ? <p>Cargando inventario...</p> : null}
         {canShowInventoryEmpty ? <p>No hay productos para los filtros seleccionados.</p> : null}
 
         {!isLoadingInventory && balances.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Tipo</th>
-                <th>Categoría</th>
-                <th>Unidad</th>
-                <th>Existencia actual</th>
-              </tr>
-            </thead>
-            <tbody>
-              {balances.map((balance) => (
-                <tr key={`${balance.warehouseId}:${balance.productId}`}>
-                  <td>{balance.productName}</td>
-                  <td>
-                    <StatusBadge tone={balance.productType === 'raw_material' ? 'warning' : 'success'}>
-                      {productTypeLabelByKey[balance.productType]}
-                    </StatusBadge>
-                  </td>
-                  <td>{balance.categoryName ?? 'Sin categoría'}</td>
-                  <td>{productUnitLabelByKey[balance.unit]}</td>
-                  <td>{formatQuantity(balance.quantity, balance.unit)}</td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Tipo</th>
+                  <th>Categoría</th>
+                  <th>Unidad</th>
+                  <th>Existencia actual</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {balances.map((balance) => (
+                  <tr key={`${balance.warehouseId}:${balance.productId}`}>
+                    <td>{balance.productName}</td>
+                    <td>
+                      <StatusBadge tone={balance.productType === 'raw_material' ? 'warning' : 'success'}>
+                        {productTypeLabelByKey[balance.productType]}
+                      </StatusBadge>
+                    </td>
+                    <td>{balance.categoryName ?? 'Sin categoría'}</td>
+                    <td>{productUnitLabelByKey[balance.unit]}</td>
+                    <td>{formatQuantity(balance.quantity, balance.unit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>
-            Página {inventoryPage} de {Math.max(inventoryTotalPages, 1)}
-          </span>
-          <div className="products-pagination__actions">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={inventoryPage <= 1}
-              onClick={() => setInventoryPage((current) => current - 1)}
-            >
-              Anterior
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={inventoryTotalPages === 0 || inventoryPage >= inventoryTotalPages}
-              onClick={() => setInventoryPage((current) => current + 1)}
-            >
-              Siguiente
-            </Button>
+        {inventoryLoadError ? null : (
+          <div className="products-pagination">
+            <span>
+              Página {inventoryPage} de {Math.max(inventoryTotalPages, 1)}
+            </span>
+            <div className="products-pagination__actions">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={inventoryPage <= 1}
+                onClick={() => setInventoryPage((current) => current - 1)}
+              >
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={inventoryTotalPages === 0 || inventoryPage >= inventoryTotalPages}
+                onClick={() => setInventoryPage((current) => current + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       <Panel className="stock-panel" title="Historial de ajustes">
@@ -771,63 +787,74 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
           </label>
         </div>
 
+        {adjustmentsLoadError ? (
+          <LoadErrorState
+            message={adjustmentsLoadError}
+            onRetry={() => void loadAdjustments()}
+            isRetrying={isLoadingAdjustments}
+          />
+        ) : null}
         {isLoadingAdjustments ? <p>Cargando historial...</p> : null}
         {canShowAdjustmentEmpty ? <p>No hay ajustes para los filtros seleccionados.</p> : null}
 
         {!isLoadingAdjustments && adjustments.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Depósito</th>
-                <th>Producto</th>
-                <th>Anterior</th>
-                <th>Nueva</th>
-                <th>Delta</th>
-                <th>Motivo</th>
-                <th>Usuario</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adjustments.map((adjustment) => (
-                <tr key={adjustment.id}>
-                  <td>{new Date(adjustment.createdAt).toLocaleString('es-PY')}</td>
-                  <td>{adjustment.warehouseName}</td>
-                  <td>{adjustment.productName}</td>
-                  <td>{formatQuantity(adjustment.previousQuantity, adjustment.unit)}</td>
-                  <td>{formatQuantity(adjustment.newQuantity, adjustment.unit)}</td>
-                  <td>{formatDelta(adjustment.delta, adjustment.unit)}</td>
-                  <td>{adjustment.reason}</td>
-                  <td>{adjustment.createdByUserName}</td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Depósito</th>
+                  <th>Producto</th>
+                  <th>Anterior</th>
+                  <th>Nueva</th>
+                  <th>Delta</th>
+                  <th>Motivo</th>
+                  <th>Usuario</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {adjustments.map((adjustment) => (
+                  <tr key={adjustment.id}>
+                    <td>{new Date(adjustment.createdAt).toLocaleString('es-PY')}</td>
+                    <td>{adjustment.warehouseName}</td>
+                    <td>{adjustment.productName}</td>
+                    <td>{formatQuantity(adjustment.previousQuantity, adjustment.unit)}</td>
+                    <td>{formatQuantity(adjustment.newQuantity, adjustment.unit)}</td>
+                    <td>{formatDelta(adjustment.delta, adjustment.unit)}</td>
+                    <td>{adjustment.reason}</td>
+                    <td>{adjustment.createdByUserName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
 
-        <div className="products-pagination">
-          <span>
-            Página {adjustmentsPage} de {Math.max(adjustmentsTotalPages, 1)}
-          </span>
-          <div className="products-pagination__actions">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={adjustmentsPage <= 1}
-              onClick={() => setAdjustmentsPage((current) => current - 1)}
-            >
-              Anterior
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={adjustmentsTotalPages === 0 || adjustmentsPage >= adjustmentsTotalPages}
-              onClick={() => setAdjustmentsPage((current) => current + 1)}
-            >
-              Siguiente
-            </Button>
+        {adjustmentsLoadError ? null : (
+          <div className="products-pagination">
+            <span>
+              Página {adjustmentsPage} de {Math.max(adjustmentsTotalPages, 1)}
+            </span>
+            <div className="products-pagination__actions">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={adjustmentsPage <= 1}
+                onClick={() => setAdjustmentsPage((current) => current - 1)}
+              >
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={adjustmentsTotalPages === 0 || adjustmentsPage >= adjustmentsTotalPages}
+                onClick={() => setAdjustmentsPage((current) => current + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       {errorMessage ? (

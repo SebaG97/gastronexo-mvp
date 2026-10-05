@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel, StatusBadge } from '../../shared/components'
+import { Button, Panel, StatusBadge, TableScroll } from '../../shared/components'
 import {
   ApiError,
   createCutType,
@@ -248,53 +248,55 @@ export function CutTypesView({ token, canWriteProducts, createRequestId }: CutTy
         {canShowEmptyState ? <p>No hay tipos de corte para los filtros seleccionados.</p> : null}
 
         {!isLoading && cutTypes.length > 0 ? (
-          <table className="products-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Descripción</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cutTypes.map((cutType) => (
-                <tr key={cutType.id}>
-                  <td>{cutType.name}</td>
-                  <td>{cutType.description || 'Sin descripción'}</td>
-                  <td>
-                    <StatusBadge tone={cutType.isActive ? 'success' : 'warning'}>
-                      {cutType.isActive ? 'Activo' : 'Inactivo'}
-                    </StatusBadge>
-                  </td>
-                  <td className="products-table__actions">
-                    {canWriteProducts ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={pendingId === cutType.id}
-                          onClick={() => setFormState({ type: 'edit', cutType, values: toValues(cutType) })}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={pendingId === cutType.id}
-                          onClick={() => void handleToggleStatus(cutType)}
-                        >
-                          {cutType.isActive ? 'Inactivar' : 'Activar'}
-                        </Button>
-                      </>
-                    ) : (
-                      <span className="products-table__no-actions">Solo lectura</span>
-                    )}
-                  </td>
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Descripción</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cutTypes.map((cutType) => (
+                  <tr key={cutType.id}>
+                    <td>{cutType.name}</td>
+                    <td>{cutType.description || 'Sin descripción'}</td>
+                    <td>
+                      <StatusBadge tone={cutType.isActive ? 'success' : 'warning'}>
+                        {cutType.isActive ? 'Activo' : 'Inactivo'}
+                      </StatusBadge>
+                    </td>
+                    <td className="products-table__actions">
+                      {canWriteProducts ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingId === cutType.id}
+                            onClick={() => setFormState({ type: 'edit', cutType, values: toValues(cutType) })}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingId === cutType.id}
+                            onClick={() => void handleToggleStatus(cutType)}
+                          >
+                            {cutType.isActive ? 'Inactivar' : 'Activar'}
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="products-table__no-actions">Solo lectura</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
       </Panel>
 

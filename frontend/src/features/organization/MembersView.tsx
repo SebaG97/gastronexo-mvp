@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Panel } from '../../shared/components'
+import { Button, Panel, TableScroll } from '../../shared/components'
 import {
   addOrganizationMember,
   ApiError,
@@ -159,58 +159,60 @@ export function MembersView({ token }: MembersViewProps) {
         {canShowEmptyState ? <p>No hay miembros cargados para esta organización.</p> : null}
 
         {!isLoading && members.length > 0 ? (
-          <table className="members-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Rol</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => {
-                const roleOptions = [member.role, ...member.actions.assignableRoles].filter(
-                  (role, index, array) => array.indexOf(role) === index,
-                )
+          <TableScroll>
+            <table className="members-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Rol</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((member) => {
+                  const roleOptions = [member.role, ...member.actions.assignableRoles].filter(
+                    (role, index, array) => array.indexOf(role) === index,
+                  )
 
-                return (
-                  <tr key={member.userId}>
-                    <td>{member.fullName}</td>
-                    <td>{member.email}</td>
-                    <td>{member.role}</td>
-                    <td className="members-table__actions">
-                      <select
-                        className="select-input"
-                        value={member.role}
-                        disabled={!member.actions.canChangeRole || pendingMemberId === member.userId}
-                        onChange={(event) =>
-                          void handleChangeRole(
-                            member,
-                            event.target.value as 'admin' | 'operator' | 'viewer',
-                          )
-                        }
-                      >
-                        {roleOptions.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={!member.actions.canRevoke || pendingMemberId === member.userId}
-                        onClick={() => void handleRevokeMember(member)}
-                      >
-                        Revocar
-                      </Button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                  return (
+                    <tr key={member.userId}>
+                      <td>{member.fullName}</td>
+                      <td>{member.email}</td>
+                      <td>{member.role}</td>
+                      <td className="members-table__actions">
+                        <select
+                          className="select-input"
+                          value={member.role}
+                          disabled={!member.actions.canChangeRole || pendingMemberId === member.userId}
+                          onChange={(event) =>
+                            void handleChangeRole(
+                              member,
+                              event.target.value as 'admin' | 'operator' | 'viewer',
+                            )
+                          }
+                        >
+                          {roleOptions.map((role) => (
+                            <option key={role} value={role}>
+                              {role}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!member.actions.canRevoke || pendingMemberId === member.userId}
+                          onClick={() => void handleRevokeMember(member)}
+                        >
+                          Revocar
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
       </Panel>
 
