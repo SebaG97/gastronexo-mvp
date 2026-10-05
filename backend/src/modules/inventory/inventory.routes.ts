@@ -33,7 +33,7 @@ const listInventoryAdjustmentsQuerySchema = z.object({
 const listInventoryMovementsQuerySchema = z.object({
   warehouseId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
-  movementType: z.enum(['purchase', 'adjustment', 'sale']).optional(),
+  movementType: z.enum(['purchase', 'adjustment', 'sale', 'production']).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -603,7 +603,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
            CASE im.source_type
              WHEN 'purchase' THEN po.invoice_number
              WHEN 'order_delivery' THEN o.order_number
-             ELSE ia.reason
+             WHEN 'adjustment' THEN ia.reason
+             ELSE pr.run_number
            END AS "sourceReference",
            im.created_by AS "createdBy",
            u.full_name AS "createdByUserName",
@@ -629,6 +630,10 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
            ON im.source_type = 'adjustment'
           AND ia.id = im.source_id
           AND ia.organization_id = im.organization_id
+         LEFT JOIN production_runs pr
+           ON im.movement_type = 'production'
+          AND pr.id = im.source_id
+          AND pr.organization_id = im.organization_id
          ${whereSql}
          ORDER BY im.created_at DESC, im.id DESC
          LIMIT ${limitPlaceholder}

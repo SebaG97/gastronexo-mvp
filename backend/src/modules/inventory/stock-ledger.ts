@@ -2,8 +2,14 @@ import type { pool } from '../../db/pool.js'
 
 type DbClient = Pick<typeof pool, 'query'>
 
-export type MovementType = 'purchase' | 'adjustment' | 'sale'
-export type MovementSourceType = 'purchase' | 'adjustment' | 'order_delivery'
+export type MovementType = 'purchase' | 'adjustment' | 'sale' | 'production'
+export type MovementSourceType =
+  | 'purchase'
+  | 'adjustment'
+  | 'order_delivery'
+  | 'production_consumption'
+  | 'production_output'
+  | 'production_void'
 
 export type StockRequirement = {
   productId: string

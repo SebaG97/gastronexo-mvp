@@ -10,6 +10,8 @@ import { inventoryRoutes } from './modules/inventory/inventory.routes.js'
 import { warehousesRoutes } from './modules/inventory/warehouses.routes.js'
 import { organizationMembersRoutes } from './modules/organization/organization-members.routes.js'
 import { ordersRoutes } from './modules/orders/orders.routes.js'
+import { productionRunsRoutes } from './modules/production/production-runs.routes.js'
+import { recipesRoutes } from './modules/production/recipes.routes.js'
 import { purchasesRoutes } from './modules/purchases/purchases.routes.js'
 import { salesRoutes } from './modules/sales/sales.routes.js'
 import { suppliersRoutes } from './modules/purchases/suppliers.routes.js'
@@ -79,6 +81,8 @@ export function buildApp() {
   app.register(purchasesRoutes, { prefix: '/api/purchases' })
   app.register(ordersRoutes, { prefix: '/api/orders' })
   app.register(salesRoutes, { prefix: '/api/sales' })
+  app.register(recipesRoutes, { prefix: '/api/recipes' })
+  app.register(productionRunsRoutes, { prefix: '/api/production-runs' })
 
   return app
 }
