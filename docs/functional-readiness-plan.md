@@ -1,5 +1,96 @@
 # Functional Readiness Plan
 
+## Misión 5.3 - Entorno local y verificación visual completa
+
+Cierra el pendiente de 5.2 ("validación visual interactiva con screenshot"). Sin rediseños ni features nuevas.
+
+### Cómo se levantó el entorno
+
+| Paso | Resultado |
+| --- | --- |
+| `backend/.env`, `frontend/.env` | Ya existían (ignorados por git). `DATABASE_URL` ya apuntaba a `gastronexo:gastronexo-dev@localhost:5432/gastronexo_dev` (Docker). `JWT_SECRET` de 55 caracteres. Se corrigió `FRONTEND_ORIGIN` de `http://localhost:5175` a `http://localhost:5173` (con 5175 el CORS bloquearía al front en 5173). |
+| PostgreSQL | No hay PostgreSQL instalado en Windows (ni servicio ni binarios). Docker Desktop estaba detenido (pipe `dockerDesktopLinuxEngine` inexistente); se arrancó `Docker Desktop.exe` y el engine respondió en ~1 min. El contenedor `gastronexo-postgres` ya existía y arrancó por `restart: unless-stopped` (`healthy`). `docker compose up -d postgres` devolvió un error 500 al consultar la imagen, pero no fue necesario. |
+| `npm install` + `npm run db:migrate` | Sin cambios de dependencias; migraciones 001 a 006 ya aplicadas (`schema_migrations` con 6 filas), el migrador terminó sin pendientes. |
+| `npm run dev` (backend) | `GET /health` → `200 {"status":"ok"}`; `GET /ready` → `200 {"status":"ready"}`. |
+| `npm run dev` (frontend) | Vite 5.4.21 arrancó en `http://localhost:5173` (`--strictPort`) **sin `spawn EPERM`**. No hizo falta el fallback `build + preview` ni servir `dist/`. |
+| Navegador | Chromium headless vía Playwright 1.55 (instalado fuera del repo, en un directorio temporal) usando el Chromium ya cacheado en `%LOCALAPPDATA%\ms-playwright`. |
+| Builds | `backend: npm run build` (tsc) OK. `frontend: npm run build` (tsc -b + vite build) OK: JS 251.94 kB (69.04 kB gzip), CSS 15.27 kB. |
+
+### Datos de prueba (vía API)
+
+- Owner `owner-<ts>@demo.local` con organización `Demo QA <ts>`; segundo usuario `viewer-<ts>@demo.local` (registra su propia org `Viewer Org <ts>`, que queda vacía) agregado como `viewer` a `Demo QA`.
+- 2 categorías (`Verduras`, `Elaborados`), 1 depósito (`Depósito central`), 1 proveedor.
+- 3 materias primas (`Papa negra`, `Cebolla`, `Zanahoria`, en kg).
+- 2 productos terminados vendibles: `Papa procesada` (Gs. 5.000/kg, visible en catálogo) y `Cebolla en pluma` (Gs. 4.000/kg, `isCatalogVisible=false`).
+- 2 tipos de corte (`Bastón`, `Cubos`): Papa → Bastón (+1.000, default) y Cubos (+0); Cebolla → Cubos (+500, default).
+- 1 compra con 2 ítems (50 kg Papa negra, 30 kg Cebolla) → stock 50 / 30 con historial de ajustes.
+- 1 cliente (`Restaurante El Fogón`), 3 pedidos: `PED-000001` en `new` (total 82.500), `PED-000002` en `confirmed`, `PED-000003` en `delivered`.
+
+### Screenshots
+
+En `docs/visual-qa/` (69 PNG, ~4.6 MB, página completa). En `miembros-*`, `vacio-miembros-1440` y `login-error-1440` los emails de prueba están enmascarados (bloque magenta):
+
+- `<seccion>-<ancho>.png` para `login`, `dashboard`, `productos`, `tipos-de-corte`, `clientes`, `pedidos`, `compras`, `produccion`, `mermas`, `ventas`, `stock`, `miembros` en 1440, 1024 y 390 px (36 capturas).
+- Estados: `login-error-1440`, `productos-cargando-1440`, `productos-error-1440` (500 simulado interceptando la request), `productos-form-validacion-1440`, `vacio-*-1440` (org vacía), `pedidos-dark-1440`, `focus-teclado-1440`.
+- Flujos: `flujo-producto-cortes-1440`, `flujo-pedido-form-1440`, `flujo-pedido-historial-1440`.
+- Organización y viewer: `selector-organizacion-1440`, `selector-organizacion-cambiada-1440`, `viewer-*-1440`, `viewer-pedido-detalle-1440`, `viewer-productos-cortes-1440`, `viewer-pedidos-390`.
+
+### Flujos de punta a punta
+
+| Flujo | Resultado |
+| --- | --- |
+| 1. Registro → login → recarga → logout | OK. El registro solo existe por API (no hay UI). Login guarda `gastronexo:auth:token` en `localStorage`; tras `reload` la sesión se restaura (Dashboard); logout limpia el storage y vuelve al login. Contraseña incorrecta muestra "Email o contraseña incorrectos." (`role="alert"`). |
+| 2. Producto con categoría, precio y cortes | OK. Alta `Zanahoria rallada QA` (kg, elaborado, Elaborados, costo 1.000, vendible, visible, Gs. 3.500); desde "Editar" se asignan Cubos (+200, default) y Bastón (+0); mensaje "Corte asignado correctamente." |
+| 3. Pedido manual | OK. Cliente + Papa procesada/Bastón × 10 + Cebolla en pluma/Cubos × 5: total en formulario **Gs. 82.500** = 10 × (5.000 + 1.000) + 5 × (4.000 + 500); el modificador de corte se aplica por unidad. Se guardó como `PED-000004` con el mismo total. |
+| 4. `new → confirmed → preparing → ready → delivered` | OK por UI (Confirmar / Iniciar preparacion / Marcar listo / Entregar). El historial muestra las 5 entradas con usuario y fecha. |
+| 5. Viewer | OK. En las 10 secciones visibles no hay botones de escritura habilitados en el contenido; la acción primaria de los módulos reales queda deshabilitada con `title="Requiere permisos de owner, admin u operator."`; "Miembros" no aparece en el menú; el detalle de pedido muestra "Solo lectura"; "Ver cortes" no muestra el formulario de alta. |
+| Selector de organización | OK. El viewer ve 2 organizaciones; al cambiar se actualiza el nombre, el token y los permisos (owner en su org → viewer en `Demo QA`). |
+
+### Resultado del checklist
+
+| Ítem | Resultado |
+| --- | --- |
+| Carga sin errores de consola ni requests fallidas | OK en las 12 pantallas × 3 anchos. Solo aparecieron el `401` esperado del login fallido y los `500` simulados a propósito. |
+| Sidebar/topbar y sección activa | OK: `.nav__item--active` correcto en todas las pantallas. En ≤760px el sidebar desbordaba la página (corregido, ver abajo). |
+| Tablas sin desborde horizontal en móvil | **Falla parcial**: ver hallazgo H2. |
+| Estados vacío / cargando / error | Vacío y cargando: textos claros ("No hay pedidos para los filtros seleccionados.", "Cargando productos..."). Error: ver H6. |
+| Formularios: labels, validaciones, errores | Todos los campos tienen `<label>` visible. La validación nativa `required` se dispara antes que los mensajes propios (H8). |
+| Acción primaria / viewer | OK en los módulos reales. En placeholders y Dashboard está habilitada incluso para viewer y abre un `window.alert` (H4). |
+| Mojibake | En la UI renderizada no se detectó (búsqueda automática de `Ã`, `Â`, `â€`, `�` en las 69 pantallas). En el código: 1 caso en un mensaje de la API (H15). Hay textos sin tilde (H16). |
+| Foco por teclado y contraste | El foco es visible pero es el anillo por defecto del navegador (1px); solo `.field input:focus` tiene estilo propio (H9). Contraste de texto y badges razonable en claro y oscuro. |
+| Placeholders (Producción, Mermas, Ventas, Dashboard) | Visualmente coherentes con el sistema (Panel, iconos, badges). Contenido engañoso: ver H3 y H5. |
+
+### Bug corregido
+
+- **H1 · Móvil (≤760px): el sidebar estiraba toda la página a ~1.212px de ancho.** La acción primaria y el logout quedaban fuera de pantalla en todas las secciones. Causa: `.shell { grid-template-columns: 1fr }`; el mínimo de `1fr` es el ancho del contenido, así que el `overflow-x: auto` de `.nav` nunca se activaba. Corrección: `minmax(0, 1fr)` en `frontend/src/shared/styles/app.css`. Después del cambio Dashboard, Tipos de corte, Mermas, Ventas y Login no tienen desborde en 390px, y el menú scrollea horizontalmente.
+
+### Hallazgos priorizados (pendientes para una misión aparte)
+
+| # | Prioridad | Tipo | Pantalla | Archivo | Hallazgo |
+| --- | --- | --- | --- | --- | --- |
+| H2 | Alta | UX/bug | Productos (1024 y 390), Pedidos, Stock, Compras, Clientes, Miembros, Producción (390) | `app.css` (`.panel__body`, `.topbar__actions`) | Las tablas no tienen contenedor con scroll y desbordan la página: Productos 1.095px a 1024 de ancho y 774px a 390; Pedidos/Stock 630px; Compras 545px; Clientes 510px; Miembros 472px; Producción 405px (por la topbar). Propuesta: `overflow-x: auto` en el contenedor de las tablas y `flex-wrap` en `.topbar__actions`. |
+| H3 | Alta | UX | Dashboard | `features/dashboard/DashboardView.tsx` | Muestra métricas ficticias fijas (Gs. 1.850.000, "6 insumos alcanzaron su punto de reposición", etc.) también en una organización vacía. Se pueden confundir con datos reales. |
+| H4 | Alta | UX | Dashboard, Producción, Mermas, Ventas, Miembros | `app/App.tsx:326` | La acción primaria ("Ver reporte", "Nueva producción", "Registrar merma", "Registrar venta", "Gestionar accesos") está habilitada, incluso para viewer, y abre `window.alert("… flujo pendiente de implementación.")`. |
+| H5 | Media | UX/texto | Producción, Mermas, Ventas | `features/shared/PlaceholderModule.tsx:36` | Un badge verde dice "Base funcional lista" en módulos sin funcionalidad. |
+| H6 | Media | UX | Productos (patrón compartido) | `features/products/ProductsView.tsx:406` | Con error de carga, el catálogo muestra "Total: 0 / Página 1 de 1" como si estuviera vacío. El error aparece al pie de la página, lejos de la tabla, sin opción de reintentar y con el mensaje de la API tal cual. |
+| H7 | Media | UX | Login | `app/components/LoginView.tsx` | No hay UI de registro ni de creación de organización; solo se puede por API. |
+| H8 | Media | UX/texto | Formularios (Productos, Login, Pedidos) | `features/products/ProductForm.tsx` | Los atributos `required` nativos muestran el globo del navegador en el idioma del navegador ("Please fill out this field.") antes que los mensajes propios `.form-error`. |
+| H9 | Media | a11y | Todas | `shared/styles/app.css:65` | Falta un estilo `:focus-visible` propio para botones, ítems de navegación y selects; solo los inputs de `.field` tienen anillo de foco con la marca. |
+| H10 | Media | a11y | Topbar (todas) | `app/components/SystemShell.tsx` | Hay dos `h1` por pantalla (topbar y página) con el mismo texto. El `select` de organización no tiene `<label>` asociado. El nombre de la organización se repite (select y span). La navegación no usa `aria-current`. |
+| H11 | Baja | UX | Stock › Historial de ajustes | `features/stock/StockView.tsx` | La columna "Motivo" muestra el valor crudo `purchase:<uuid>`. |
+| H12 | Baja | UI | Productos, Categorías | `app.css:516` | `td.products-table__actions` usa `display: flex`, por eso el borde inferior de la columna Acciones queda desalineado con el resto de la fila. |
+| H13 | Baja | Dominio | Productos | `backend/src/modules/products/products.routes.ts` | Se permiten productos activos con nombre duplicado (se crearon dos "Zanahoria rallada QA 7716"). Confirmar si es intencional. |
+| H14 | Baja | Texto | Varias | — | Se mezcla tuteo y voseo: "Gestiona pedidos…" (Pedidos) frente a "Gestioná productos…" (Productos, Stock, Miembros). |
+| H15 | Baja | Mojibake | Compras (error de API) | `backend/src/modules/purchases/purchases.routes.ts:334` | "No se puede registrar una compra en un depÃ³sito inactivo." |
+| H16 | Baja | Texto | Pedidos, Clientes | `features/orders/OrdersView.tsx`, `features/customers/CustomersView.tsx` | Faltan tildes: "En preparacion", "Iniciar preparacion", "Numero", "Buscar por numero", "Razon social", "Telefono", "Pagina", "Items". Los mensajes de la API también tienen textos sin tilde ("catalogo"). |
+| H17 | Baja | Texto | Montos (todas) | formateadores `es-PY` | La moneda se muestra como guaraníes ("Gs.") y los textos usan voseo rioplatense. Confirmar la moneda objetivo con el cliente. |
+
+### Estado y pendientes
+
+- Entorno: backend y frontend corriendo, `/health` y `/ready` en 200, builds OK.
+- Verificación visual: 11 secciones + login + selector de organización en 3 anchos, con screenshots; flujo de pedido completo validado por UI.
+- Pendiente: H2 a H17 en una misión de pulido UI/UX. H2 es el que más afecta en móvil.
+
 ## Mision 5.2 - Motor administrativo de pedidos
 
 ### Alcance implementado
