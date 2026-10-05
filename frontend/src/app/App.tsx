@@ -33,7 +33,8 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   purchases: { title: 'Compras', action: 'Registrar compra' },
   production: { title: 'Producción', action: 'Nueva producción' },
   waste: { title: 'Mermas', action: 'Registrar merma' },
-  sales: { title: 'Ventas', action: 'Registrar venta' },
+  // Una venta es un pedido entregado: la accion lleva a crear un pedido.
+  sales: { title: 'Ventas', action: 'Nuevo pedido' },
   stock: { title: 'Stock', action: 'Ajustar stock' },
   members: { title: 'Miembros', action: 'Gestionar accesos' },
 }
@@ -44,6 +45,7 @@ const sectionsWithPrimaryAction: AppSection[] = [
   'customers',
   'orders',
   'purchases',
+  'sales',
   'stock',
 ]
 
@@ -123,7 +125,7 @@ export function App() {
       ),
       production: <ProductionView />,
       waste: <WasteView />,
-      sales: <SalesView />,
+      sales: session ? <SalesView token={session.token} /> : <></>,
       stock: session ? (
         <StockView
           token={session.token}
@@ -309,8 +311,9 @@ export function App() {
       return
     }
 
-    if (activeSection === 'orders') {
+    if (activeSection === 'orders' || activeSection === 'sales') {
       if (session.organization.capabilities.canWriteProducts) {
+        setActiveSection('orders')
         setOrderCreateRequestId((current) => current + 1)
       }
       return

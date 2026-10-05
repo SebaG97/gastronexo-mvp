@@ -210,7 +210,50 @@ export type InventoryBalance = {
   warehouseId: string
   warehouseName: string
   quantity: string
+  reservedQuantity: string
+  availableQuantity: string
   updatedAt: string | null
+}
+
+export type InventoryMovementType = 'purchase' | 'adjustment' | 'sale'
+
+export type InventoryMovement = {
+  id: string
+  warehouseId: string
+  warehouseName: string
+  productId: string
+  productName: string
+  productType: ProductType
+  unit: ProductUnit
+  movementType: InventoryMovementType
+  quantityDelta: string
+  balanceAfter: string
+  sourceType: 'purchase' | 'adjustment' | 'order_delivery'
+  sourceId: string
+  sourceReference: string | null
+  createdBy: string
+  createdByUserName: string
+  createdAt: string
+}
+
+export type InventoryMovementsListRequest = {
+  warehouseId?: string
+  productId?: string
+  movementType?: InventoryMovementType
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+export type InventoryMovementsListResponse = {
+  movements: InventoryMovement[]
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
 }
 
 export type InventoryListRequest = {
@@ -364,8 +407,63 @@ export type Order = {
   subtotal: string
   total: string
   itemCount: number
+  warehouseId: string | null
+  warehouseName: string | null
+  deliveredAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+export type StockShortage = {
+  productId: string
+  productName: string
+  unit: ProductUnit
+  requested: string
+  available: string
+  missing: string
+}
+
+export type InsufficientStockError = {
+  message: string
+  code: 'insufficient_stock'
+  warehouseId: string
+  warehouseName: string
+  shortages: StockShortage[]
+}
+
+export type Sale = {
+  id: string
+  orderNumber: string
+  customerId: string
+  customerName: string
+  orderDate: string
+  deliveredAt: string
+  warehouseId: string | null
+  warehouseName: string | null
+  total: string
+  itemCount: number
+}
+
+export type SalesListRequest = {
+  from?: string
+  to?: string
+  q?: string
+  page?: number
+  pageSize?: number
+}
+
+export type SalesListResponse = {
+  sales: Sale[]
+  summary: {
+    count: number
+    total: string
+  }
+  pagination: {
+    total: number
+    page: number
+    pageSize: number
+    totalPages: number
+  }
 }
 
 export type OrderItem = {
@@ -506,12 +604,35 @@ export type PurchaseMutationInput = {
 
 export class ApiError extends Error {
   public readonly status: number
+  public readonly payload: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, payload: unknown = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.payload = payload
   }
+}
+
+/** Detalle de stock insuficiente (409) devuelto al confirmar o editar un pedido. */
+export function getInsufficientStockError(error: unknown): InsufficientStockError | null {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return null
+  }
+
+  const payload = error.payload
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'code' in payload &&
+    payload.code === 'insufficient_stock' &&
+    'shortages' in payload &&
+    Array.isArray(payload.shortages)
+  ) {
+    return payload as InsufficientStockError
+  }
+
+  return null
 }
 
 export function getStoredToken() {
@@ -562,7 +683,7 @@ async function apiRequest<TResponse>(path: string, init: RequestInit = {}, token
         ? payload.message
         : 'No se pudo completar la solicitud.'
 
-    throw new ApiError(response.status, message)
+    throw new ApiError(response.status, message, payload)
   }
 
   return payload as TResponse
@@ -949,6 +1070,35 @@ export async function getInventoryAdjustments(query: InventoryAdjustmentsListReq
   return apiRequest<InventoryAdjustmentsListResponse>(`/api/inventory/adjustments${suffix}`, { method: 'GET' }, token)
 }
 
+export async function getInventoryMovements(query: InventoryMovementsListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.warehouseId) {
+    searchParams.set('warehouseId', query.warehouseId)
+  }
+  if (query.productId) {
+    searchParams.set('productId', query.productId)
+  }
+  if (query.movementType) {
+    searchParams.set('movementType', query.movementType)
+  }
+  if (query.from) {
+    searchParams.set('from', query.from)
+  }
+  if (query.to) {
+    searchParams.set('to', query.to)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<InventoryMovementsListResponse>(`/api/inventory/movements${suffix}`, { method: 'GET' }, token)
+}
+
 export async function getSuppliers(query: SuppliersListRequest, token: string) {
   const searchParams = new URLSearchParams()
 
@@ -1168,13 +1318,41 @@ export async function updateOrder(orderId: string, input: Partial<OrderMutationI
   )
 }
 
-export async function updateOrderStatus(orderId: string, status: OrderStatus, token: string) {
+export async function updateOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+  token: string,
+  warehouseId?: string,
+) {
   return apiRequest<OrderDetailResponse>(
     `/api/orders/${orderId}/status`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(warehouseId ? { status, warehouseId } : { status }),
     },
     token,
   )
+}
+
+export async function getSales(query: SalesListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+
+  if (query.from) {
+    searchParams.set('from', query.from)
+  }
+  if (query.to) {
+    searchParams.set('to', query.to)
+  }
+  if (query.q) {
+    searchParams.set('q', query.q)
+  }
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page))
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize))
+  }
+
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<SalesListResponse>(`/api/sales${suffix}`, { method: 'GET' }, token)
 }

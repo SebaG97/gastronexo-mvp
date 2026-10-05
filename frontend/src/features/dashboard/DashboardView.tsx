@@ -5,6 +5,7 @@ import {
   getOrders,
   getProducts,
   getPurchases,
+  getSales,
   type OrderStatus,
   type Purchase,
 } from '../../shared/lib/auth-api'
@@ -19,6 +20,7 @@ type DashboardData = {
   ordersByStatus: Record<OrderStatus, number>
   purchasesThisMonth: number
   recentPurchases: Purchase[]
+  salesThisMonth: { count: number; total: string }
 }
 
 const orderStatuses: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']
@@ -49,12 +51,19 @@ function firstDayOfCurrentMonth() {
   return `${now.getFullYear()}-${month}-01`
 }
 
+/** Inicio del mes en hora local, como instante: las ventas se filtran por fecha de entrega. */
+function startOfCurrentMonthInstant() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+}
+
 async function loadDashboardData(token: string): Promise<DashboardData> {
-  const [products, customers, purchasesThisMonth, recentPurchases, ...orderTotals] = await Promise.all([
+  const [products, customers, purchasesThisMonth, recentPurchases, salesThisMonth, ...orderTotals] = await Promise.all([
     getProducts({ status: 'active', page: 1, pageSize: 1 }, token),
     getCustomers({ status: 'active', page: 1, pageSize: 1 }, token),
     getPurchases({ from: firstDayOfCurrentMonth(), page: 1, pageSize: 1 }, token),
     getPurchases({ page: 1, pageSize: 5 }, token),
+    getSales({ from: startOfCurrentMonthInstant(), page: 1, pageSize: 1 }, token),
     ...orderStatuses.map((status) => getOrders({ status, page: 1, pageSize: 1 }, token)),
   ])
 
@@ -68,6 +77,7 @@ async function loadDashboardData(token: string): Promise<DashboardData> {
     ordersByStatus,
     purchasesThisMonth: purchasesThisMonth.pagination.total,
     recentPurchases: recentPurchases.purchases,
+    salesThisMonth: salesThisMonth.summary,
   }
 }
 
@@ -172,10 +182,27 @@ export function DashboardView({ token }: DashboardViewProps) {
               )}
             </Panel>
             <Panel className="alerts-panel" title="Facturación, mermas y alertas">
-              <p className="dashboard-empty">
-                Sin datos todavía. Estos indicadores se mostrarán cuando estén disponibles los módulos de
-                ventas, mermas y producción.
-              </p>
+              <ul className="dashboard-status-list">
+                <li>
+                  <span>
+                    Facturación del mes
+                    <span className="kpi-card__hint">
+                      {data.salesThisMonth.count === 1
+                        ? '1 pedido entregado'
+                        : `${data.salesThisMonth.count} pedidos entregados`}
+                    </span>
+                  </span>
+                  <strong>{formatMoney(data.salesThisMonth.total)}</strong>
+                </li>
+                <li>
+                  <span>Mermas</span>
+                  <span className="dashboard-empty">Sin datos todavía</span>
+                </li>
+                <li>
+                  <span>Alertas de stock</span>
+                  <span className="dashboard-empty">Sin datos todavía</span>
+                </li>
+              </ul>
             </Panel>
           </section>
         </>

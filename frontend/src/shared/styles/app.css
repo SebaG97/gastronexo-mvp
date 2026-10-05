@@ -727,6 +727,64 @@
   margin: 0;
 }
 
+.stock-history__filters--movements {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.numeric-cell,
+.products-table .numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stock-shortage {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+  color: var(--sys-danger);
+  background: var(--sys-danger-bg);
+  font-size: 13px;
+}
+
+.stock-shortage p {
+  margin: 0;
+  font-weight: 650;
+}
+
+.stock-shortage ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.order-warehouse-picker {
+  min-width: 220px;
+  margin: 0;
+}
+
+.sales-page {
+  display: grid;
+  gap: 12px;
+}
+
+.sales-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-filters {
+  display: grid;
+  grid-template-columns: 180px 180px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
 .purchases-page {
   display: grid;
   gap: 12px;
@@ -1062,8 +1120,15 @@
   .supplier-form,
   .stock-inventory__toolbar,
   .stock-adjustment-form,
-  .stock-history__filters {
+  .stock-history__filters,
+  .sales-filters,
+  .sales-summary {
     grid-template-columns: 1fr;
+  }
+
+  .order-warehouse-picker {
+    min-width: 0;
+    width: 100%;
   }
 
   .purchase-item-row {

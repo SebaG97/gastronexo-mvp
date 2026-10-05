@@ -4,13 +4,14 @@ import {
   ApiError,
   createInventoryAdjustment,
   createWarehouse,
-  getInventoryAdjustments,
   getInventoryBalances,
+  getInventoryMovements,
   getWarehouses,
   updateWarehouse,
   updateWarehouseStatus,
   type InventoryBalance,
-  type InventoryAdjustment,
+  type InventoryMovement,
+  type InventoryMovementType,
   type ProductType,
   type Warehouse,
 } from '../../shared/lib/auth-api'
@@ -18,7 +19,19 @@ import { productTypeLabelByKey } from '../products/product-types'
 import { productUnitLabelByKey } from '../products/product-units'
 
 const INVENTORY_PAGE_SIZE = 10
-const ADJUSTMENTS_PAGE_SIZE = 8
+const MOVEMENTS_PAGE_SIZE = 8
+
+const movementTypeLabelByKey: Record<InventoryMovementType, string> = {
+  purchase: 'Compra',
+  adjustment: 'Ajuste',
+  sale: 'Venta',
+}
+
+const movementToneByKey: Record<InventoryMovementType, 'success' | 'warning' | 'danger'> = {
+  purchase: 'success',
+  adjustment: 'warning',
+  sale: 'danger',
+}
 
 const integerQuantityFormatter = new Intl.NumberFormat('es-PY', {
   minimumFractionDigits: 0,
@@ -69,14 +82,15 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
 
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(true)
   const [isLoadingInventory, setIsLoadingInventory] = useState(false)
-  const [isLoadingAdjustments, setIsLoadingAdjustments] = useState(false)
+  const [isLoadingMovements, setIsLoadingMovements] = useState(false)
   const [isSubmittingWarehouse, setIsSubmittingWarehouse] = useState(false)
   const [isSubmittingAdjustment, setIsSubmittingAdjustment] = useState(false)
 
-  const [adjustments, setAdjustments] = useState<InventoryAdjustment[]>([])
-  const [adjustmentsPage, setAdjustmentsPage] = useState(1)
-  const [adjustmentsTotalPages, setAdjustmentsTotalPages] = useState(0)
+  const [movements, setMovements] = useState<InventoryMovement[]>([])
+  const [movementsPage, setMovementsPage] = useState(1)
+  const [movementsTotalPages, setMovementsTotalPages] = useState(0)
   const [historyProductIdFilter, setHistoryProductIdFilter] = useState('')
+  const [historyMovementTypeFilter, setHistoryMovementTypeFilter] = useState<'' | InventoryMovementType>('')
   const [historyFromDate, setHistoryFromDate] = useState('')
   const [historyToDate, setHistoryToDate] = useState('')
 
@@ -91,22 +105,25 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [warehousesLoadError, setWarehousesLoadError] = useState<string | null>(null)
   const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null)
-  const [adjustmentsLoadError, setAdjustmentsLoadError] = useState<string | null>(null)
+  const [movementsLoadError, setMovementsLoadError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const activeWarehouses = useMemo(() => warehouses.filter((warehouse) => warehouse.isActive), [warehouses])
 
-  const adjustmentPreviousQuantity = useMemo(() => {
+  const adjustmentSelectedBalance = useMemo(() => {
     if (!adjustmentWarehouseId || !adjustmentProductId) {
-      return 0
+      return null
     }
 
-    const match = adjustmentProductOptions.find(
-      (item) => item.warehouseId === adjustmentWarehouseId && item.productId === adjustmentProductId,
+    return (
+      adjustmentProductOptions.find(
+        (item) => item.warehouseId === adjustmentWarehouseId && item.productId === adjustmentProductId,
+      ) ?? null
     )
-
-    return Number(match?.quantity ?? '0')
   }, [adjustmentProductId, adjustmentProductOptions, adjustmentWarehouseId])
+
+  const adjustmentPreviousQuantity = Number(adjustmentSelectedBalance?.quantity ?? '0')
+  const adjustmentReservedQuantity = Number(adjustmentSelectedBalance?.reservedQuantity ?? '0')
 
   const adjustmentSelectedUnit = useMemo(() => {
     const match = adjustmentProductOptions.find((item) => item.productId === adjustmentProductId)
@@ -124,7 +141,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
 
   const canShowInventoryEmpty =
     !isLoadingInventory && !inventoryLoadError && balances.length === 0 && selectedWarehouseId
-  const canShowAdjustmentEmpty = !isLoadingAdjustments && !adjustmentsLoadError && adjustments.length === 0
+  const canShowMovementsEmpty = !isLoadingMovements && !movementsLoadError && movements.length === 0
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -232,36 +249,37 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
     }
   }
 
-  async function loadAdjustments() {
+  async function loadMovements() {
     if (!selectedWarehouseId) {
-      setAdjustments([])
-      setAdjustmentsTotalPages(0)
+      setMovements([])
+      setMovementsTotalPages(0)
       return
     }
 
-    setIsLoadingAdjustments(true)
-    setAdjustmentsLoadError(null)
+    setIsLoadingMovements(true)
+    setMovementsLoadError(null)
 
     try {
-      const response = await getInventoryAdjustments(
+      const response = await getInventoryMovements(
         {
           warehouseId: selectedWarehouseId,
           productId: historyProductIdFilter || undefined,
+          movementType: historyMovementTypeFilter || undefined,
           from: historyFromDate ? `${historyFromDate}T00:00:00.000Z` : undefined,
           to: historyToDate ? `${historyToDate}T23:59:59.999Z` : undefined,
-          page: adjustmentsPage,
-          pageSize: ADJUSTMENTS_PAGE_SIZE,
+          page: movementsPage,
+          pageSize: MOVEMENTS_PAGE_SIZE,
         },
         token,
       )
 
-      setAdjustments(response.adjustments)
-      setAdjustmentsTotalPages(response.pagination.totalPages)
+      setMovements(response.movements)
+      setMovementsTotalPages(response.pagination.totalPages)
     } catch {
-      setAdjustmentsLoadError('No se pudo cargar el historial de ajustes.')
-      setAdjustments([])
+      setMovementsLoadError('No se pudieron cargar los movimientos de stock.')
+      setMovements([])
     } finally {
-      setIsLoadingAdjustments(false)
+      setIsLoadingMovements(false)
     }
   }
 
@@ -278,8 +296,16 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
   }, [adjustmentWarehouseId, token])
 
   useEffect(() => {
-    void loadAdjustments()
-  }, [adjustmentsPage, historyFromDate, historyProductIdFilter, historyToDate, selectedWarehouseId, token])
+    void loadMovements()
+  }, [
+    movementsPage,
+    historyFromDate,
+    historyMovementTypeFilter,
+    historyProductIdFilter,
+    historyToDate,
+    selectedWarehouseId,
+    token,
+  ])
 
   async function handleCreateWarehouse(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -407,7 +433,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
 
       setSuccessMessage('Ajuste registrado correctamente.')
       setAdjustmentReason('')
-      await Promise.all([loadInventory(), loadAdjustments(), loadAdjustmentProductOptions()])
+      await Promise.all([loadInventory(), loadMovements(), loadAdjustmentProductOptions()])
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorMessage(error.message)
@@ -424,7 +450,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
       <div className="page-header">
         <div>
           <h1>Stock</h1>
-          <p>Controlá existencias por depósito y registrá ajustes manuales con auditoría.</p>
+          <p>Controlá existencias, reservas por pedidos y movimientos por depósito.</p>
         </div>
       </div>
 
@@ -438,7 +464,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               onChange={(event) => {
                 setSelectedWarehouseId(event.target.value)
                 setInventoryPage(1)
-                setAdjustmentsPage(1)
+                setMovementsPage(1)
                 setAdjustmentWarehouseId(event.target.value)
               }}
               disabled={isLoadingWarehouses || activeWarehouses.length === 0}
@@ -629,6 +655,12 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               <span>
                 Diferencia: <strong>{formatDelta(adjustmentDelta, adjustmentSelectedUnit)}</strong>
               </span>
+              {adjustmentReservedQuantity > 0 ? (
+                <span>
+                  Reservado por pedidos (mínimo):{' '}
+                  <strong>{formatQuantity(adjustmentReservedQuantity, adjustmentSelectedUnit)}</strong>
+                </span>
+              ) : null}
               <span>
                 Unidad: <strong>{productUnitLabelByKey[adjustmentSelectedUnit]}</strong>
               </span>
@@ -694,7 +726,9 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
                   <th>Tipo</th>
                   <th>Categoría</th>
                   <th>Unidad</th>
-                  <th>Existencia actual</th>
+                  <th className="numeric-cell">Cantidad</th>
+                  <th className="numeric-cell">Reservado</th>
+                  <th className="numeric-cell">Disponible</th>
                 </tr>
               </thead>
               <tbody>
@@ -708,7 +742,11 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
                     </td>
                     <td>{balance.categoryName ?? 'Sin categoría'}</td>
                     <td>{productUnitLabelByKey[balance.unit]}</td>
-                    <td>{formatQuantity(balance.quantity, balance.unit)}</td>
+                    <td className="numeric-cell">{formatQuantity(balance.quantity, balance.unit)}</td>
+                    <td className="numeric-cell">{formatQuantity(balance.reservedQuantity, balance.unit)}</td>
+                    <td className="numeric-cell">
+                      <strong>{formatQuantity(balance.availableQuantity, balance.unit)}</strong>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -743,8 +781,8 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
         )}
       </Panel>
 
-      <Panel className="stock-panel" title="Historial de ajustes">
-        <div className="stock-history__filters">
+      <Panel className="stock-panel" title="Movimientos de stock">
+        <div className="stock-history__filters stock-history__filters--movements">
           <label className="field stock-history__filter">
             Producto
             <select
@@ -752,7 +790,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               value={historyProductIdFilter}
               onChange={(event) => {
                 setHistoryProductIdFilter(event.target.value)
-                setAdjustmentsPage(1)
+                setMovementsPage(1)
               }}
             >
               <option value="">Todos</option>
@@ -764,13 +802,29 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
             </select>
           </label>
           <label className="field stock-history__filter">
+            Tipo
+            <select
+              className="select-input"
+              value={historyMovementTypeFilter}
+              onChange={(event) => {
+                setHistoryMovementTypeFilter(event.target.value as '' | InventoryMovementType)
+                setMovementsPage(1)
+              }}
+            >
+              <option value="">Todos</option>
+              <option value="purchase">Compra</option>
+              <option value="adjustment">Ajuste</option>
+              <option value="sale">Venta</option>
+            </select>
+          </label>
+          <label className="field stock-history__filter">
             Desde
             <input
               type="date"
               value={historyFromDate}
               onChange={(event) => {
                 setHistoryFromDate(event.target.value)
-                setAdjustmentsPage(1)
+                setMovementsPage(1)
               }}
             />
           </label>
@@ -781,48 +835,50 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               value={historyToDate}
               onChange={(event) => {
                 setHistoryToDate(event.target.value)
-                setAdjustmentsPage(1)
+                setMovementsPage(1)
               }}
             />
           </label>
         </div>
 
-        {adjustmentsLoadError ? (
+        {movementsLoadError ? (
           <LoadErrorState
-            message={adjustmentsLoadError}
-            onRetry={() => void loadAdjustments()}
-            isRetrying={isLoadingAdjustments}
+            message={movementsLoadError}
+            onRetry={() => void loadMovements()}
+            isRetrying={isLoadingMovements}
           />
         ) : null}
-        {isLoadingAdjustments ? <p>Cargando historial...</p> : null}
-        {canShowAdjustmentEmpty ? <p>No hay ajustes para los filtros seleccionados.</p> : null}
+        {isLoadingMovements ? <p>Cargando movimientos...</p> : null}
+        {canShowMovementsEmpty ? <p>No hay movimientos para los filtros seleccionados.</p> : null}
 
-        {!isLoadingAdjustments && adjustments.length > 0 ? (
+        {!isLoadingMovements && movements.length > 0 ? (
           <TableScroll>
             <table className="products-table">
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Depósito</th>
                   <th>Producto</th>
-                  <th>Anterior</th>
-                  <th>Nueva</th>
-                  <th>Delta</th>
-                  <th>Motivo</th>
+                  <th>Tipo</th>
+                  <th className="numeric-cell">Cantidad</th>
+                  <th className="numeric-cell">Saldo</th>
+                  <th>Origen</th>
                   <th>Usuario</th>
                 </tr>
               </thead>
               <tbody>
-                {adjustments.map((adjustment) => (
-                  <tr key={adjustment.id}>
-                    <td>{new Date(adjustment.createdAt).toLocaleString('es-PY')}</td>
-                    <td>{adjustment.warehouseName}</td>
-                    <td>{adjustment.productName}</td>
-                    <td>{formatQuantity(adjustment.previousQuantity, adjustment.unit)}</td>
-                    <td>{formatQuantity(adjustment.newQuantity, adjustment.unit)}</td>
-                    <td>{formatDelta(adjustment.delta, adjustment.unit)}</td>
-                    <td>{adjustment.reason}</td>
-                    <td>{adjustment.createdByUserName}</td>
+                {movements.map((movement) => (
+                  <tr key={movement.id}>
+                    <td>{new Date(movement.createdAt).toLocaleString('es-PY')}</td>
+                    <td>{movement.productName}</td>
+                    <td>
+                      <StatusBadge tone={movementToneByKey[movement.movementType]}>
+                        {movementTypeLabelByKey[movement.movementType]}
+                      </StatusBadge>
+                    </td>
+                    <td className="numeric-cell">{formatDelta(movement.quantityDelta, movement.unit)}</td>
+                    <td className="numeric-cell">{formatQuantity(movement.balanceAfter, movement.unit)}</td>
+                    <td>{movement.sourceReference ?? '—'}</td>
+                    <td>{movement.createdByUserName}</td>
                   </tr>
                 ))}
               </tbody>
@@ -830,25 +886,25 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
           </TableScroll>
         ) : null}
 
-        {adjustmentsLoadError ? null : (
+        {movementsLoadError ? null : (
           <div className="products-pagination">
             <span>
-              Página {adjustmentsPage} de {Math.max(adjustmentsTotalPages, 1)}
+              Página {movementsPage} de {Math.max(movementsTotalPages, 1)}
             </span>
             <div className="products-pagination__actions">
               <Button
                 type="button"
                 variant="secondary"
-                disabled={adjustmentsPage <= 1}
-                onClick={() => setAdjustmentsPage((current) => current - 1)}
+                disabled={movementsPage <= 1}
+                onClick={() => setMovementsPage((current) => current - 1)}
               >
                 Anterior
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                disabled={adjustmentsTotalPages === 0 || adjustmentsPage >= adjustmentsTotalPages}
-                onClick={() => setAdjustmentsPage((current) => current + 1)}
+                disabled={movementsTotalPages === 0 || movementsPage >= movementsTotalPages}
+                onClick={() => setMovementsPage((current) => current + 1)}
               >
                 Siguiente
               </Button>

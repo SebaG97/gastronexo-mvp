@@ -7,19 +7,42 @@ import {
   getCustomers,
   getOrderById,
   getOrders,
+  getInsufficientStockError,
   getProductById,
   getProducts,
+  getWarehouses,
   updateOrder,
   updateOrderStatus,
   type Customer,
+  type InsufficientStockError,
   type Order,
   type OrderDetail,
   type OrderMutationInput,
   type OrderStatus,
   type Product,
   type ProductCutOption,
+  type Warehouse,
 } from '../../shared/lib/auth-api'
 import { productUnitLabelByKey } from '../products/product-units'
+
+function StockShortageNotice({ error }: { error: InsufficientStockError }) {
+  return (
+    <div className="stock-shortage" role="alert">
+      <p>Stock insuficiente en {error.warehouseName}. No se reservó nada.</p>
+      <ul>
+        {error.shortages.map((shortage) => {
+          const unit = productUnitLabelByKey[shortage.unit]
+          return (
+            <li key={shortage.productId}>
+              <strong>{shortage.productName}</strong>: pedido {formatQuantity(shortage.requested)} {unit} · disponible{' '}
+              {formatQuantity(shortage.available)} {unit} · faltan <strong>{formatQuantity(shortage.missing)} {unit}</strong>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 
 const PAGE_SIZE = 10
 
@@ -173,6 +196,9 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null)
   const [availableTransitions, setAvailableTransitions] = useState<OrderStatus[]>([])
   const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null)
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [dispatchWarehouseId, setDispatchWarehouseId] = useState('')
+  const [stockError, setStockError] = useState<InsufficientStockError | null>(null)
 
   const [isCustomerFormOpen, setIsCustomerFormOpen] = useState(false)
   const [customerForm, setCustomerForm] = useState<CustomerForm>(defaultCustomerForm)
@@ -236,14 +262,17 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
 
   async function loadOptions() {
     try {
-      const [customersResponse, productsResponse] = await Promise.all([
+      const [customersResponse, productsResponse, warehousesResponse] = await Promise.all([
         getCustomers({ status: 'active', page: 1, pageSize: 100 }, token),
         getProducts({ status: 'active', page: 1, pageSize: 100 }, token),
+        getWarehouses('active', token),
       ])
 
       const sellable = productsResponse.products.filter((product) => product.isSellable)
       setCustomers(customersResponse.customers)
       setSellableProducts(sellable)
+      setWarehouses(warehousesResponse.warehouses)
+      setDispatchWarehouseId((current) => current || warehousesResponse.warehouses[0]?.id || '')
 
       if (!customerId && customersResponse.customers[0]) {
         setCustomerId(customersResponse.customers[0].id)
@@ -279,6 +308,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
   async function openCreateForm() {
     setFormMode({ type: 'create' })
     setSelectedOrder(null)
+    setStockError(null)
     setOrderDate(todayIsoDate())
     setRequestedDeliveryDate('')
     setNotes('')
@@ -299,6 +329,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
 
   async function openEditForm(order: OrderDetail) {
     setFormMode({ type: 'edit', order })
+    setStockError(null)
     setCustomerId(order.customerId)
     setOrderDate(order.orderDate.slice(0, 10))
     setRequestedDeliveryDate(order.requestedDeliveryDate?.slice(0, 10) ?? '')
@@ -310,6 +341,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
   async function handleSelectOrder(orderId: string) {
     setIsLoadingDetail(true)
     setErrorMessage(null)
+    setStockError(null)
 
     try {
       const response = await getOrderById(orderId, token)
@@ -403,6 +435,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
     setIsSubmittingOrder(true)
     setErrorMessage(null)
     setSuccessMessage(null)
+    setStockError(null)
 
     try {
       const payload = buildMutationInput(customerId, orderDate, requestedDeliveryDate, notes, items)
@@ -417,11 +450,22 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
       setSuccessMessage(formMode.type === 'edit' ? 'Pedido actualizado correctamente.' : 'Pedido creado correctamente.')
       await loadOrders()
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudo guardar el pedido.')
+      const insufficientStock = getInsufficientStockError(error)
+      if (insufficientStock) {
+        setStockError(insufficientStock)
+      } else {
+        setErrorMessage(error instanceof ApiError ? error.message : 'No se pudo guardar el pedido.')
+      }
     } finally {
       setIsSubmittingOrder(false)
     }
   }
+
+  // Un pedido sin deposito (nuevo, o confirmado antes de 6.1) lo elige al avanzar: ahi se reserva el stock.
+  const needsDispatchWarehouse =
+    selectedOrder !== null &&
+    selectedOrder.warehouseId === null &&
+    availableTransitions.some((transition) => transition !== 'cancelled')
 
   async function handleStatusChange(nextStatus: OrderStatus) {
     if (!selectedOrder) {
@@ -432,18 +476,36 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
       return
     }
 
+    const warehouseId = needsDispatchWarehouse && nextStatus !== 'cancelled' ? dispatchWarehouseId : undefined
+    if (needsDispatchWarehouse && nextStatus !== 'cancelled' && !warehouseId) {
+      setErrorMessage('Selecciona el deposito desde el que se va a despachar el pedido.')
+      return
+    }
+
     setPendingStatus(nextStatus)
     setErrorMessage(null)
     setSuccessMessage(null)
+    setStockError(null)
 
     try {
-      const response = await updateOrderStatus(selectedOrder.id, nextStatus, token)
+      const response = await updateOrderStatus(selectedOrder.id, nextStatus, token, warehouseId)
       setSelectedOrder(response.order)
       setAvailableTransitions(response.transitions)
-      setSuccessMessage('Estado del pedido actualizado.')
+      setSuccessMessage(
+        warehouseId
+          ? `Estado actualizado. Stock reservado en ${response.order.warehouseName ?? 'el deposito'}.`
+          : nextStatus === 'delivered'
+            ? 'Pedido entregado. Stock descontado del deposito.'
+            : 'Estado del pedido actualizado.',
+      )
       await loadOrders()
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'No se pudo cambiar el estado.')
+      const insufficientStock = getInsufficientStockError(error)
+      if (insufficientStock) {
+        setStockError(insufficientStock)
+      } else {
+        setErrorMessage(error instanceof ApiError ? error.message : 'No se pudo cambiar el estado.')
+      }
     } finally {
       setPendingStatus(null)
     }
@@ -561,6 +623,13 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
               <strong>{formatMoney(formTotal)}</strong>
             </div>
 
+            {formMode.type === 'edit' && formMode.order.warehouseId && formMode.order.status === 'confirmed' ? (
+              <p className="purchase-detail-notes">
+                El pedido tiene stock reservado en {formMode.order.warehouseName}: al guardar se ajusta la reserva.
+              </p>
+            ) : null}
+            {stockError ? <StockShortageNotice error={stockError} /> : null}
+
             <div className="products-form__actions">
               <Button type="submit" disabled={isSubmittingOrder || customers.length === 0 || sellableProducts.length === 0}>{isSubmittingOrder ? 'Guardando...' : 'Guardar pedido'}</Button>
               <Button type="button" variant="secondary" onClick={() => setFormMode({ type: 'closed' })}>Cerrar</Button>
@@ -600,6 +669,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
                   <th>Entrega</th>
                   <th>Items</th>
                   <th>Total</th>
+                  <th>Deposito</th>
                   <th>Estado</th>
                   <th>Acciones</th>
                 </tr>
@@ -613,6 +683,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
                     <td>{order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</td>
                     <td>{order.itemCount}</td>
                     <td>{formatMoney(order.total)}</td>
+                    <td>{order.warehouseName ?? 'Sin asignar'}</td>
                     <td><StatusBadge tone={statusToneByKey[order.status]}>{statusLabelByKey[order.status]}</StatusBadge></td>
                     <td className="products-table__actions">
                       <Button type="button" variant="secondary" disabled={isLoadingDetail} onClick={() => void handleSelectOrder(order.id)}>Ver detalle</Button>
@@ -646,6 +717,10 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
             <span>Fecha: <strong>{new Date(selectedOrder.orderDate).toLocaleDateString('es-PY')}</strong></span>
             <span>Entrega: <strong>{selectedOrder.requestedDeliveryDate ? new Date(selectedOrder.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</strong></span>
             <span>Total: <strong>{formatMoney(selectedOrder.total)}</strong></span>
+            <span>Deposito: <strong>{selectedOrder.warehouseName ?? 'Sin asignar'}</strong></span>
+            {selectedOrder.deliveredAt ? (
+              <span>Entregado: <strong>{new Date(selectedOrder.deliveredAt).toLocaleString('es-PY')}</strong></span>
+            ) : null}
           </div>
           {selectedOrder.notes ? <p className="purchase-detail-notes">{selectedOrder.notes}</p> : null}
           <TableScroll>
@@ -676,6 +751,25 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
           </TableScroll>
 
           <div className="order-actions">
+            {canWriteOrders && needsDispatchWarehouse ? (
+              <label className="field order-warehouse-picker">
+                Deposito de despacho
+                <select
+                  className="select-input"
+                  value={dispatchWarehouseId}
+                  onChange={(event) => {
+                    setDispatchWarehouseId(event.target.value)
+                    setStockError(null)
+                  }}
+                  disabled={pendingStatus !== null || warehouses.length === 0}
+                >
+                  {warehouses.length === 0 ? <option value="">Sin depositos activos</option> : null}
+                  {warehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {canWriteOrders && (selectedOrder.status === 'new' || selectedOrder.status === 'confirmed') ? (
               <Button type="button" variant="secondary" onClick={() => void openEditForm(selectedOrder)}>Editar pedido</Button>
             ) : null}
@@ -686,6 +780,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
             ))}
             {!canWriteOrders ? <span className="products-table__no-actions">Solo lectura</span> : null}
           </div>
+          {stockError && formMode.type === 'closed' ? <StockShortageNotice error={stockError} /> : null}
 
           <div className="order-history">
             <strong>Historial</strong>
