@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 import {
   aggregateByProduct,
@@ -71,8 +72,6 @@ const updateOrderStatusSchema = z.object({
 // Estados en los que el pedido mantiene stock reservado en su deposito.
 const reservedStatuses: OrderStatus[] = ['confirmed', 'preparing', 'ready']
 
-type DbClient = Pick<typeof pool, 'query'>
-
 type OrderInput = z.infer<typeof createOrderSchema>
 type OrderItemInput = z.infer<typeof orderItemSchema>
 
@@ -108,14 +107,6 @@ function normalizeOptionalText(value: string | null | undefined) {
 
   const trimmed = value.trim()
   return trimmed.length ? trimmed : null
-}
-
-async function rollbackTransaction(client: DbClient) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
 }
 
 async function getNextOrderNumber(client: DbClient, organizationId: string) {
@@ -573,21 +564,16 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       const input = createOrderSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      const order = await withTransaction(async (client) => {
         const customerCheck = await ensureActiveCustomer(client, organizationId, input.customerId)
         if (!customerCheck.ok) {
-          await rollbackTransaction(client)
-          return reply.code(customerCheck.statusCode).send({ message: customerCheck.message })
+          abortTransaction(customerCheck.statusCode, { message: customerCheck.message })
         }
 
         const prepared = await prepareOrderItems(client, organizationId, input.items)
         if (!prepared.ok) {
-          await rollbackTransaction(client)
-          return reply.code(prepared.statusCode).send({ message: prepared.message })
+          abortTransaction(prepared.statusCode, { message: prepared.message })
         }
 
         const orderNumber = await getNextOrderNumber(client, organizationId)
@@ -621,8 +607,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const orderId = orderResult.rows[0].id
         const itemsResult = await replaceOrderItems(client, organizationId, orderId, input.items)
         if (!itemsResult.ok) {
-          await rollbackTransaction(client)
-          return reply.code(itemsResult.statusCode).send({ message: itemsResult.message })
+          abortTransaction(itemsResult.statusCode, { message: itemsResult.message })
         }
 
         await client.query(
@@ -631,31 +616,22 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           [orderId, userId],
         )
 
-        await client.query('COMMIT')
+        return getOrderById(client, organizationId, orderId)
+      })
 
-        const order = await getOrderById(pool, organizationId, orderId)
-        return reply.code(201).send({ order, transitions: allowedTransitions.new })
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      return reply.code(201).send({ order, transitions: allowedTransitions.new })
     },
   )
 
   app.patch(
     '/:id',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = orderIdParamsSchema.parse(request.params)
       const input = updateOrderSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const currentResult = await client.query<{ status: OrderStatus; warehouseId: string | null }>(
           `SELECT status, warehouse_id AS "warehouseId"
            FROM orders
@@ -667,20 +643,17 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const currentOrder = currentResult.rows[0]
 
         if (!currentOrder) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Pedido no encontrado.' })
+          abortTransaction(404, { message: 'Pedido no encontrado.' })
         }
 
         if (!editableStatuses.includes(currentOrder.status)) {
-          await rollbackTransaction(client)
-          return reply.code(400).send({ message: 'Solo se pueden editar pedidos nuevos o confirmados.' })
+          abortTransaction(400, { message: 'Solo se pueden editar pedidos nuevos o confirmados.' })
         }
 
         if (input.customerId) {
           const customerCheck = await ensureActiveCustomer(client, organizationId, input.customerId)
           if (!customerCheck.ok) {
-            await rollbackTransaction(client)
-            return reply.code(customerCheck.statusCode).send({ message: customerCheck.message })
+            abortTransaction(customerCheck.statusCode, { message: customerCheck.message })
           }
         }
 
@@ -698,8 +671,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
 
           const itemsResult = await replaceOrderItems(client, organizationId, id, input.items)
           if (!itemsResult.ok) {
-            await rollbackTransaction(client)
-            return reply.code(itemsResult.statusCode).send({ message: itemsResult.message })
+            abortTransaction(itemsResult.statusCode, { message: itemsResult.message })
           }
 
           if (reservedWarehouseId) {
@@ -718,11 +690,8 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
               balances,
             )
             if (!reservation.ok) {
-              await rollbackTransaction(client)
-              const warehouseName = await getWarehouseName(pool, organizationId, reservedWarehouseId)
-              return reply
-                .code(409)
-                .send(insufficientStockBody(reservedWarehouseId, warehouseName, reservation.shortages))
+              const warehouseName = await getWarehouseName(client, organizationId, reservedWarehouseId)
+              abortTransaction(409, insufficientStockBody(reservedWarehouseId, warehouseName, reservation.shortages))
             }
           }
 
@@ -764,32 +733,22 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           params,
         )
 
-        await client.query('COMMIT')
-
-        const order = await getOrderById(pool, organizationId, id)
+        const order = await getOrderById(client, organizationId, id)
         return { order, transitions: allowedTransitions[currentOrder.status] }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 
   app.patch(
     '/:id/status',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = orderIdParamsSchema.parse(request.params)
       const input = updateOrderStatusSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const currentResult = await client.query<{ status: OrderStatus; warehouseId: string | null }>(
           `SELECT status, warehouse_id AS "warehouseId"
            FROM orders
@@ -801,13 +760,11 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const currentOrder = currentResult.rows[0]
 
         if (!currentOrder) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Pedido no encontrado.' })
+          abortTransaction(404, { message: 'Pedido no encontrado.' })
         }
 
         if (!allowedTransitions[currentOrder.status].includes(input.status)) {
-          await rollbackTransaction(client)
-          return reply.code(400).send({ message: 'Transicion de estado invalida para este pedido.' })
+          abortTransaction(400, { message: 'Transicion de estado invalida para este pedido.' })
         }
 
         let warehouseId = currentOrder.warehouseId
@@ -831,8 +788,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           if (!hasReservation) {
             // Confirmacion (o pedido previo a 6.1 sin deposito): se elige deposito y se reserva.
             if (!input.warehouseId) {
-              await rollbackTransaction(client)
-              return reply.code(400).send({
+              abortTransaction(400, {
                 message: 'Selecciona el deposito desde el que se va a despachar el pedido.',
                 code: 'warehouse_required',
               })
@@ -840,8 +796,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
 
             const warehouseCheck = await findWarehouseForOrder(client, organizationId, input.warehouseId)
             if (!warehouseCheck.ok) {
-              await rollbackTransaction(client)
-              return reply.code(warehouseCheck.statusCode).send({ message: warehouseCheck.message })
+              abortTransaction(warehouseCheck.statusCode, { message: warehouseCheck.message })
             }
 
             balances = await lockBalances(
@@ -852,16 +807,15 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             )
             const reservation = await reserveStock(client, organizationId, input.warehouseId, requirements, balances)
             if (!reservation.ok) {
-              await rollbackTransaction(client)
-              return reply
-                .code(409)
-                .send(insufficientStockBody(input.warehouseId, warehouseCheck.warehouse.name, reservation.shortages))
+              abortTransaction(
+                409,
+                insufficientStockBody(input.warehouseId, warehouseCheck.warehouse.name, reservation.shortages),
+              )
             }
 
             warehouseId = input.warehouseId
           } else if (input.warehouseId && input.warehouseId !== warehouseId) {
-            await rollbackTransaction(client)
-            return reply.code(400).send({
+            abortTransaction(400, {
               message: 'El pedido ya tiene stock reservado en otro deposito. Cancelalo para cambiar de deposito.',
             })
           }
@@ -882,8 +836,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
               balances,
             })
             if (!consumption.ok) {
-              await rollbackTransaction(client)
-              return reply.code(409).send({
+              abortTransaction(409, {
                 message: 'La reserva de stock del pedido no coincide con el inventario. Revisa el stock del deposito.',
                 code: 'reservation_mismatch',
               })
@@ -908,16 +861,9 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           [id, currentOrder.status, input.status, userId],
         )
 
-        await client.query('COMMIT')
-
-        const order = await getOrderById(pool, organizationId, id)
+        const order = await getOrderById(client, organizationId, id)
         return { order, transitions: allowedTransitions[input.status] }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 }

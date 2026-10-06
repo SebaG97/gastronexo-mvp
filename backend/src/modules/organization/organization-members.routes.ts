@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 import type { MembershipRole } from '../auth/auth.types.js'
 
@@ -109,7 +110,7 @@ function getAssignableRolesForMember(
   return assignableRoles
 }
 
-async function countOwnersInOrganization(client: Pick<typeof pool, 'query'>, organizationId: string) {
+async function countOwnersInOrganization(client: DbClient, organizationId: string) {
   const ownerCountResult = await client.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
      FROM memberships
@@ -119,14 +120,6 @@ async function countOwnersInOrganization(client: Pick<typeof pool, 'query'>, org
   )
 
   return Number(ownerCountResult.rows[0]?.count ?? '0')
-}
-
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
 }
 
 export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
@@ -178,11 +171,8 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
   app.post('/members', { preHandler: requireOrganizationRole('owner', 'admin') }, async (request, reply) => {
     const input = addMemberSchema.parse(request.body)
     const organizationId = request.organizationAccess!.organization.id
-    const client = await pool.connect()
 
-    try {
-      await client.query('BEGIN')
-
+    const member = await withTransaction(async (client) => {
       const userResult = await client.query<{ id: string; fullName: string; email: string }>(
         `SELECT id, full_name AS "fullName", email
          FROM users
@@ -194,8 +184,7 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
       const user = userResult.rows[0]
 
       if (!user) {
-        await rollbackTransaction(client)
-        return reply.code(404).send({ message: 'No se encontró un usuario con ese email.' })
+        abortTransaction(404, { message: 'No se encontró un usuario con ese email.' })
       }
 
       const existingMembership = await client.query<{ role: MembershipRole }>(
@@ -208,8 +197,7 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
       )
 
       if (existingMembership.rowCount) {
-        await rollbackTransaction(client)
-        return reply.code(409).send({ message: 'El usuario ya pertenece a la organización.' })
+        abortTransaction(409, { message: 'El usuario ya pertenece a la organización.' })
       }
 
       const membershipResult = await client.query<{ role: MembershipRole }>(
@@ -219,37 +207,27 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
         [user.id, organizationId, input.role],
       )
 
-      await client.query('COMMIT')
+      return {
+        userId: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: membershipResult.rows[0].role,
+      }
+    })
 
-      return reply.code(201).send({
-        member: {
-          userId: user.id,
-          fullName: user.fullName,
-          email: user.email,
-          role: membershipResult.rows[0].role,
-        },
-      })
-    } catch (error) {
-      await rollbackTransaction(client)
-      throw error
-    } finally {
-      client.release()
-    }
+    return reply.code(201).send({ member })
   })
 
   app.patch(
     '/members/:userId',
     { preHandler: requireOrganizationRole('owner', 'admin') },
-    async (request, reply) => {
+    async (request) => {
       const params = updateMemberParamsSchema.parse(request.params)
       const input = updateMemberSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const actorRole = request.organizationAccess!.role
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const targetMembershipResult = await client.query<{ role: MembershipRole }>(
           `SELECT role
            FROM memberships
@@ -262,8 +240,7 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
         const targetMembership = targetMembershipResult.rows[0]
 
         if (!targetMembership) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: NOT_FOUND_MEMBER_MESSAGE })
+          abortTransaction(404, { message: NOT_FOUND_MEMBER_MESSAGE })
         }
 
         const ownerCount = await countOwnersInOrganization(client, organizationId)
@@ -271,13 +248,11 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
         if (
           !canActorUpdateMemberRole(actorRole, targetMembership.role, input.role, ownerCount)
         ) {
-          await rollbackTransaction(client)
-
           if (targetMembership.role === 'owner' && ownerCount <= 1) {
-            return reply.code(409).send({ message: LAST_OWNER_MESSAGE })
+            abortTransaction(409, { message: LAST_OWNER_MESSAGE })
           }
 
-          return reply.code(403).send({ message: FORBIDDEN_MESSAGE })
+          abortTransaction(403, { message: FORBIDDEN_MESSAGE })
         }
 
         const updateResult = await client.query<{ role: MembershipRole }>(
@@ -289,20 +264,13 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
           [params.userId, organizationId, input.role],
         )
 
-        await client.query('COMMIT')
-
         return {
           member: {
             userId: params.userId,
             role: updateResult.rows[0].role,
           },
         }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 
@@ -314,11 +282,8 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
       const organizationId = request.organizationAccess!.organization.id
       const actorId = request.organizationAccess!.user.id
       const actorRole = request.organizationAccess!.role
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      await withTransaction(async (client) => {
         const targetMembershipResult = await client.query<{ role: MembershipRole }>(
           `SELECT role
            FROM memberships
@@ -331,8 +296,7 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
         const targetMembership = targetMembershipResult.rows[0]
 
         if (!targetMembership) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: NOT_FOUND_MEMBER_MESSAGE })
+          abortTransaction(404, { message: NOT_FOUND_MEMBER_MESSAGE })
         }
 
         const ownerCount = await countOwnersInOrganization(client, organizationId)
@@ -344,13 +308,11 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (!canRevoke) {
-          await rollbackTransaction(client)
-
           if (targetMembership.role === 'owner' && ownerCount <= 1) {
-            return reply.code(409).send({ message: LAST_OWNER_MESSAGE })
+            abortTransaction(409, { message: LAST_OWNER_MESSAGE })
           }
 
-          return reply.code(403).send({ message: FORBIDDEN_MESSAGE })
+          abortTransaction(403, { message: FORBIDDEN_MESSAGE })
         }
 
         await client.query(
@@ -359,16 +321,9 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
              AND organization_id = $2`,
           [params.userId, organizationId],
         )
+      })
 
-        await client.query('COMMIT')
-
-        return reply.code(204).send()
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      return reply.code(204).send()
     },
   )
 }

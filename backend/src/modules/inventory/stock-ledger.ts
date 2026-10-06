@@ -1,6 +1,4 @@
-import type { pool } from '../../db/pool.js'
-
-type DbClient = Pick<typeof pool, 'query'>
+import type { DbClient } from '../../db/transaction.js'
 
 export type MovementType = 'purchase' | 'adjustment' | 'sale' | 'production'
 export type MovementSourceType =
@@ -48,8 +46,31 @@ export function aggregateByProduct(items: Array<{ productId: string; quantity: n
 }
 
 /**
- * Bloquea (FOR UPDATE) los balances de los productos en el deposito, siempre en el mismo
- * orden para que dos transacciones concurrentes no se bloqueen mutuamente.
+ * Crea con cantidad 0 los balances que todavia no existen, ANTES de bloquear. Si una transaccion
+ * los creara a mitad de camino, las demas los bloquearian en otro orden (deadlock, ver 6.2).
+ * Inserta en el mismo orden que lockBalances; si la transaccion falla, el rollback los descarta.
+ * Solo para transacciones que van a sumar stock (compras, ajustes, salida y anulacion de produccion).
+ */
+export async function ensureBalances(
+  client: DbClient,
+  organizationId: string,
+  warehouseId: string,
+  productIds: string[],
+) {
+  await client.query(
+    `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
+     SELECT $1, $2, product_id, 0
+     FROM unnest($3::uuid[]) AS ids(product_id)
+     ORDER BY product_id
+     ON CONFLICT (warehouse_id, product_id) DO NOTHING`,
+    [organizationId, warehouseId, [...new Set(productIds)]],
+  )
+}
+
+/**
+ * Bloquea (FOR UPDATE) los balances de los productos en el deposito, siempre en el mismo orden
+ * (product_id, warehouse_id) para que dos transacciones concurrentes no se bloqueen mutuamente.
+ * Un balance inexistente no se bloquea (cuenta como disponible 0); ver ensureBalances.
  */
 export async function lockBalances(
   client: DbClient,
@@ -66,7 +87,7 @@ export async function lockBalances(
      WHERE organization_id = $1
        AND warehouse_id = $2
        AND product_id = ANY($3::uuid[])
-     ORDER BY product_id
+     ORDER BY product_id, warehouse_id
      FOR UPDATE`,
     [organizationId, warehouseId, productIds],
   )
@@ -77,6 +98,25 @@ export async function lockBalances(
       { productId: row.productId, quantity: Number(row.quantity), reservedQuantity: Number(row.reservedQuantity) },
     ]),
   )
+}
+
+/**
+ * Bloquea las filas de costo de los productos, DESPUES de los balances y en orden por id.
+ * FOR NO KEY UPDATE (no FOR UPDATE): serializa a quienes recalculan el costo promedio sin chocar
+ * con el FOR KEY SHARE que toman los INSERT con FK a products (movimientos, items, balances).
+ */
+export async function lockProductCosts(client: DbClient, organizationId: string, productIds: string[]) {
+  const result = await client.query<{ id: string; cost: string }>(
+    `SELECT id, cost::text AS cost
+     FROM products
+     WHERE organization_id = $1
+       AND id = ANY($2::uuid[])
+     ORDER BY id
+     FOR NO KEY UPDATE`,
+    [organizationId, [...new Set(productIds)]],
+  )
+
+  return new Map(result.rows.map((row) => [row.id, Number(row.cost)]))
 }
 
 async function describeShortages(

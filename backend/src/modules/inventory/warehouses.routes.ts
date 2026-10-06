@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 
 const listWarehousesQuerySchema = z.object({
@@ -25,14 +26,6 @@ const updateWarehouseStatusSchema = z.object({
 
 function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
-}
-
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
 }
 
 export const warehousesRoutes: FastifyPluginAsync = async (app) => {
@@ -144,15 +137,12 @@ export const warehousesRoutes: FastifyPluginAsync = async (app) => {
   app.patch(
     '/:id/status',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = warehouseIdParamsSchema.parse(request.params)
       const input = updateWarehouseStatusSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const warehouseResult = await client.query<{ id: string; isActive: boolean }>(
           `SELECT id, is_active AS "isActive"
            FROM warehouses
@@ -165,8 +155,7 @@ export const warehousesRoutes: FastifyPluginAsync = async (app) => {
         const warehouse = warehouseResult.rows[0]
 
         if (!warehouse) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Depósito no encontrado.' })
+          abortTransaction(404, { message: 'Depósito no encontrado.' })
         }
 
         if (!input.isActive) {
@@ -181,10 +170,7 @@ export const warehousesRoutes: FastifyPluginAsync = async (app) => {
 
           const positiveBalanceCount = Number(positiveBalanceResult.rows[0]?.total ?? '0')
           if (positiveBalanceCount > 0) {
-            await rollbackTransaction(client)
-            return reply
-              .code(409)
-              .send({
+            abortTransaction(409, {
                 message:
                   'No se puede inactivar el depósito porque tiene inventario positivo. Ajustá el stock a 0 antes de inactivarlo.',
               })
@@ -206,15 +192,8 @@ export const warehousesRoutes: FastifyPluginAsync = async (app) => {
           [organizationId, id, input.isActive],
         )
 
-        await client.query('COMMIT')
-
         return { warehouse: updateResult.rows[0] }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 }

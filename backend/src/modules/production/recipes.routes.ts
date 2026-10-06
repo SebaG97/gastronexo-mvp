@@ -1,9 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 
-type DbClient = Pick<typeof pool, 'query'>
 
 const recipeIdParamsSchema = z.object({
   id: z.string().uuid(),
@@ -68,14 +68,6 @@ function normalizeOptionalText(value: string | null | undefined) {
 
 function roundQuantity(value: number) {
   return Number(value.toFixed(3))
-}
-
-async function rollbackTransaction(client: DbClient) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
 }
 
 /** El producto de la receta debe ser un terminado activo de la organizacion. */
@@ -306,61 +298,54 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
       const input = createRecipeSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
       try {
-        await client.query('BEGIN')
+        const recipe = await withTransaction(async (client) => {
+          const productCheck = await validateRecipeProduct(client, organizationId, input.productId)
+          if (!productCheck.ok) {
+            abortTransaction(productCheck.statusCode, { message: productCheck.message })
+          }
 
-        const productCheck = await validateRecipeProduct(client, organizationId, input.productId)
-        if (!productCheck.ok) {
-          await rollbackTransaction(client)
-          return reply.code(productCheck.statusCode).send({ message: productCheck.message })
-        }
-
-        const ingredientsCheck = await validateIngredients(
-          client,
-          organizationId,
-          input.items.map((item) => item.ingredientProductId),
-        )
-        if (!ingredientsCheck.ok) {
-          await rollbackTransaction(client)
-          return reply.code(ingredientsCheck.statusCode).send({ message: ingredientsCheck.message })
-        }
-
-        const recipeResult = await client.query<{ id: string }>(
-          `INSERT INTO recipes (
-             organization_id,
-             product_id,
-             yield_quantity,
-             notes,
-             created_by,
-             updated_by
-           )
-           VALUES ($1, $2, $3, $4, $5, $5)
-           RETURNING id`,
-          [
+          const ingredientsCheck = await validateIngredients(
+            client,
             organizationId,
-            input.productId,
-            roundQuantity(input.yieldQuantity),
-            normalizeOptionalText(input.notes),
-            userId,
-          ],
-        )
+            input.items.map((item) => item.ingredientProductId),
+          )
+          if (!ingredientsCheck.ok) {
+            abortTransaction(ingredientsCheck.statusCode, { message: ingredientsCheck.message })
+          }
 
-        const recipeId = recipeResult.rows[0].id
-        await replaceRecipeItems(client, organizationId, recipeId, input.items)
-        await client.query('COMMIT')
+          const recipeResult = await client.query<{ id: string }>(
+            `INSERT INTO recipes (
+               organization_id,
+               product_id,
+               yield_quantity,
+               notes,
+               created_by,
+               updated_by
+             )
+             VALUES ($1, $2, $3, $4, $5, $5)
+             RETURNING id`,
+            [
+              organizationId,
+              input.productId,
+              roundQuantity(input.yieldQuantity),
+              normalizeOptionalText(input.notes),
+              userId,
+            ],
+          )
 
-        const recipe = await getRecipeById(client, organizationId, recipeId)
+          const recipeId = recipeResult.rows[0].id
+          await replaceRecipeItems(client, organizationId, recipeId, input.items)
+          return getRecipeById(client, organizationId, recipeId)
+        })
+
         return reply.code(201).send({ recipe })
       } catch (error) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: ACTIVE_RECIPE_EXISTS_MESSAGE, code: 'active_recipe_exists' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )
@@ -368,16 +353,13 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
   app.patch(
     '/:id',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = recipeIdParamsSchema.parse(request.params)
       const input = updateRecipeSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const currentResult = await client.query<{ id: string }>(
           `SELECT id
            FROM recipes
@@ -388,8 +370,7 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (!currentResult.rows[0]) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Receta no encontrada.' })
+          abortTransaction(404, { message: 'Receta no encontrada.' })
         }
 
         if (input.items) {
@@ -399,8 +380,7 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
             input.items.map((item) => item.ingredientProductId),
           )
           if (!ingredientsCheck.ok) {
-            await rollbackTransaction(client)
-            return reply.code(ingredientsCheck.statusCode).send({ message: ingredientsCheck.message })
+            abortTransaction(ingredientsCheck.statusCode, { message: ingredientsCheck.message })
           }
 
           await replaceRecipeItems(client, organizationId, id, input.items)
@@ -427,16 +407,9 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
           values,
         )
 
-        await client.query('COMMIT')
-
         const recipe = await getRecipeById(client, organizationId, id)
         return { recipe }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 
@@ -448,56 +421,48 @@ export const recipesRoutes: FastifyPluginAsync = async (app) => {
       const input = updateRecipeStatusSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
       try {
-        await client.query('BEGIN')
+        return await withTransaction(async (client) => {
+          const currentResult = await client.query<{ productId: string }>(
+            `SELECT product_id AS "productId"
+             FROM recipes
+             WHERE organization_id = $1
+               AND id = $2
+             FOR UPDATE`,
+            [organizationId, id],
+          )
 
-        const currentResult = await client.query<{ productId: string }>(
-          `SELECT product_id AS "productId"
-           FROM recipes
-           WHERE organization_id = $1
-             AND id = $2
-           FOR UPDATE`,
-          [organizationId, id],
-        )
-
-        const current = currentResult.rows[0]
-        if (!current) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Receta no encontrada.' })
-        }
-
-        if (input.isActive) {
-          const productCheck = await validateRecipeProduct(client, organizationId, current.productId)
-          if (!productCheck.ok) {
-            await rollbackTransaction(client)
-            return reply.code(400).send({ message: productCheck.message })
+          const current = currentResult.rows[0]
+          if (!current) {
+            abortTransaction(404, { message: 'Receta no encontrada.' })
           }
-        }
 
-        await client.query(
-          `UPDATE recipes
-           SET is_active = $3,
-               updated_by = $4,
-               updated_at = NOW()
-           WHERE organization_id = $1
-             AND id = $2`,
-          [organizationId, id, input.isActive, userId],
-        )
+          if (input.isActive) {
+            const productCheck = await validateRecipeProduct(client, organizationId, current.productId)
+            if (!productCheck.ok) {
+              abortTransaction(400, { message: productCheck.message })
+            }
+          }
 
-        await client.query('COMMIT')
+          await client.query(
+            `UPDATE recipes
+             SET is_active = $3,
+                 updated_by = $4,
+                 updated_at = NOW()
+             WHERE organization_id = $1
+               AND id = $2`,
+            [organizationId, id, input.isActive, userId],
+          )
 
-        const recipe = await getRecipeById(client, organizationId, id)
-        return { recipe }
+          const recipe = await getRecipeById(client, organizationId, id)
+          return { recipe }
+        })
       } catch (error) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: ACTIVE_RECIPE_EXISTS_MESSAGE, code: 'active_recipe_exists' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )

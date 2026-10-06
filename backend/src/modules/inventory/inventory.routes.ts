@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
-import { recordMovement } from './stock-ledger.js'
+import { ensureBalances, lockBalances, recordMovement } from './stock-ledger.js'
 
 const productTypeSchema = z.enum(['raw_material', 'finished_product'])
 
@@ -39,14 +40,6 @@ const listInventoryMovementsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
-
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
-}
 
 export const inventoryRoutes: FastifyPluginAsync = async (app) => {
   app.get(
@@ -257,11 +250,8 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
       const input = createInventoryAdjustmentSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      const created = await withTransaction(async (client) => {
         const warehouseResult = await client.query<{ id: string }>(
           `SELECT id
            FROM warehouses
@@ -281,40 +271,33 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (!warehouseResult.rows[0] || !productResult.rows[0]) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Recurso no encontrado.' })
+          abortTransaction(404, { message: 'Recurso no encontrado.' })
         }
 
-        const balanceResult = await client.query<{ id: string; quantity: string; reservedQuantity: string }>(
-          `SELECT id, quantity::text AS quantity, reserved_quantity::text AS "reservedQuantity"
-           FROM inventory_balances
-           WHERE organization_id = $1
-             AND warehouse_id = $2
-             AND product_id = $3
-           FOR UPDATE`,
-          [organizationId, input.warehouseId, input.productId],
-        )
+        // El balance tiene que existir antes de bloquearlo: si no, dos ajustes concurrentes sobre
+        // un producto sin balance leerian ambos 0 y el ledger dejaria de sumar la cantidad real.
+        await ensureBalances(client, organizationId, input.warehouseId, [input.productId])
+        const balances = await lockBalances(client, organizationId, input.warehouseId, [input.productId])
 
-        const currentBalance = balanceResult.rows[0]
-        const previousQuantity = Number(currentBalance?.quantity ?? '0')
-        const reservedQuantity = Number(currentBalance?.reservedQuantity ?? '0')
+        const currentBalance = balances.get(input.productId)
+        const previousQuantity = currentBalance?.quantity ?? 0
+        const reservedQuantity = currentBalance?.reservedQuantity ?? 0
         const delta = Number((input.newQuantity - previousQuantity).toFixed(3))
 
         if (input.newQuantity < reservedQuantity) {
-          await rollbackTransaction(client)
-          return reply.code(409).send({
+          abortTransaction(409, {
             message: `No se puede ajustar por debajo de lo reservado por pedidos (${reservedQuantity}).`,
             reservedQuantity: reservedQuantity.toFixed(3),
           })
         }
 
-        const upsertBalanceResult = await client.query(
-          `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (warehouse_id, product_id)
-           DO UPDATE SET
-             quantity = EXCLUDED.quantity,
-             updated_at = NOW()
+        const balanceResult = await client.query(
+          `UPDATE inventory_balances
+           SET quantity = $4,
+               updated_at = NOW()
+           WHERE organization_id = $1
+             AND warehouse_id = $2
+             AND product_id = $3
            RETURNING
              id,
              organization_id AS "organizationId",
@@ -372,18 +355,13 @@ export const inventoryRoutes: FastifyPluginAsync = async (app) => {
           createdBy: userId,
         })
 
-        await client.query('COMMIT')
-
-        return reply.code(201).send({
-          balance: upsertBalanceResult.rows[0],
+        return {
+          balance: balanceResult.rows[0],
           adjustment: adjustmentResult.rows[0],
-        })
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+        }
+      })
+
+      return reply.code(201).send(created)
     },
   )
 

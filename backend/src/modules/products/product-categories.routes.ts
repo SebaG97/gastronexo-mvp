@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 
 const listCategoriesQuerySchema = z.object({
@@ -25,14 +26,6 @@ const updateCategoryStatusSchema = z.object({
 
 function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
-}
-
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
 }
 
 export const productCategoriesRoutes: FastifyPluginAsync = async (app) => {
@@ -129,15 +122,12 @@ export const productCategoriesRoutes: FastifyPluginAsync = async (app) => {
   app.patch(
     '/:id/status',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = categoryIdParamsSchema.parse(request.params)
       const input = updateCategoryStatusSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const categoryResult = await client.query<{ id: string; isActive: boolean }>(
           `SELECT id, is_active AS "isActive"
            FROM product_categories
@@ -149,8 +139,7 @@ export const productCategoriesRoutes: FastifyPluginAsync = async (app) => {
         const category = categoryResult.rows[0]
 
         if (!category) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Categoría no encontrada.' })
+          abortTransaction(404, { message: 'Categoría no encontrada.' })
         }
 
         if (!input.isActive) {
@@ -165,10 +154,7 @@ export const productCategoriesRoutes: FastifyPluginAsync = async (app) => {
 
           const activeProductsCount = Number(activeProductsResult.rows[0]?.total ?? '0')
           if (activeProductsCount > 0) {
-            await rollbackTransaction(client)
-            return reply
-              .code(409)
-              .send({
+            abortTransaction(409, {
                 message:
                   'No se puede inactivar la categoría porque tiene productos activos asociados. Primero reasigná o inactivá esos productos.',
               })
@@ -185,14 +171,8 @@ export const productCategoriesRoutes: FastifyPluginAsync = async (app) => {
           [organizationId, id, input.isActive],
         )
 
-        await client.query('COMMIT')
         return { category: updateResult.rows[0] }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 }

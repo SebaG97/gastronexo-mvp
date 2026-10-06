@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 
 const allowedProductUnits = ['unit', 'kg', 'g', 'l', 'ml', 'box', 'portion'] as const
@@ -92,16 +93,8 @@ function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
 }
 
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
-}
-
 async function categoryExistsAndIsActive(
-  client: Pick<typeof pool, 'query'>,
+  client: DbClient,
   organizationId: string,
   categoryId: string,
 ) {
@@ -118,7 +111,7 @@ async function categoryExistsAndIsActive(
   return Boolean(categoryResult.rows[0])
 }
 
-async function getCategoryName(client: Pick<typeof pool, 'query'>, organizationId: string, categoryId: string) {
+async function getCategoryName(client: DbClient, organizationId: string, categoryId: string) {
   const categoryResult = await client.query<{ name: string }>(
     `SELECT name
      FROM product_categories
@@ -131,7 +124,7 @@ async function getCategoryName(client: Pick<typeof pool, 'query'>, organizationI
   return categoryResult.rows[0]?.name ?? null
 }
 
-async function getProductCutOptions(client: Pick<typeof pool, 'query'>, organizationId: string, productId: string) {
+async function getProductCutOptions(client: DbClient, organizationId: string, productId: string) {
   const result = await client.query(
     `SELECT
        pco.id,
@@ -304,77 +297,71 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const input = createProductSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
-
       try {
-        await client.query('BEGIN')
-
-        if (input.categoryId) {
-          const categoryExists = await categoryExistsAndIsActive(client, organizationId, input.categoryId)
-          if (!categoryExists) {
-            await rollbackTransaction(client)
-            return reply.code(404).send({ message: 'Categoría no encontrada.' })
+        const product = await withTransaction(async (client) => {
+          if (input.categoryId) {
+            const categoryExists = await categoryExistsAndIsActive(client, organizationId, input.categoryId)
+            if (!categoryExists) {
+              abortTransaction(404, { message: 'Categoría no encontrada.' })
+            }
           }
-        }
 
-        const sku = normalizeSku(input.sku)
-        const result = await client.query(
-          `INSERT INTO products (
-             organization_id,
-             name,
-             sku,
-             unit,
-             product_type,
-             cost,
-             category_id,
-             is_sellable,
-             is_catalog_visible,
-             sale_price
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           RETURNING
-             id,
-             name,
-             sku,
-             unit,
-             product_type AS "productType",
-             cost,
-             is_sellable AS "isSellable",
-             is_catalog_visible AS "isCatalogVisible",
-             sale_price AS "salePrice",
-             category_id AS "categoryId",
-             is_active AS "isActive",
-             created_at AS "createdAt"`,
-          [
-            organizationId,
-            input.name,
-            sku,
-            input.unit,
-            input.productType,
-            input.cost,
-            input.categoryId ?? null,
-            input.isSellable,
-            input.isCatalogVisible,
-            input.salePrice ?? null,
-          ],
-        )
+          const sku = normalizeSku(input.sku)
+          const result = await client.query(
+            `INSERT INTO products (
+               organization_id,
+               name,
+               sku,
+               unit,
+               product_type,
+               cost,
+               category_id,
+               is_sellable,
+               is_catalog_visible,
+               sale_price
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING
+               id,
+               name,
+               sku,
+               unit,
+               product_type AS "productType",
+               cost,
+               is_sellable AS "isSellable",
+               is_catalog_visible AS "isCatalogVisible",
+               sale_price AS "salePrice",
+               category_id AS "categoryId",
+               is_active AS "isActive",
+               created_at AS "createdAt"`,
+            [
+              organizationId,
+              input.name,
+              sku,
+              input.unit,
+              input.productType,
+              input.cost,
+              input.categoryId ?? null,
+              input.isSellable,
+              input.isCatalogVisible,
+              input.salePrice ?? null,
+            ],
+          )
 
-        const product = result.rows[0]
-        product.categoryName = product.categoryId
-          ? await getCategoryName(client, organizationId, product.categoryId)
-          : null
+          const product = result.rows[0]
+          product.categoryName = product.categoryId
+            ? await getCategoryName(client, organizationId, product.categoryId)
+            : null
 
-        await client.query('COMMIT')
+          return product
+        })
 
         return reply.code(201).send({ product })
       } catch (error: unknown) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )
@@ -437,102 +424,87 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
 
       assignments.push('updated_at = NOW()')
 
-      const client = await pool.connect()
-
       try {
-        await client.query('BEGIN')
+        return await withTransaction(async (client) => {
 
-        if (input.categoryId) {
-          const categoryExists = await categoryExistsAndIsActive(client, organizationId, input.categoryId)
-          if (!categoryExists) {
-            await rollbackTransaction(client)
-            return reply.code(404).send({ message: 'Categoría no encontrada.' })
+          if (input.categoryId) {
+            const categoryExists = await categoryExistsAndIsActive(client, organizationId, input.categoryId)
+            if (!categoryExists) {
+              abortTransaction(404, { message: 'Categoría no encontrada.' })
+            }
           }
-        }
 
-        if (isCommercialFieldUpdate(input)) {
-          const currentProductResult = await client.query<{
-            isActive: boolean
-            isSellable: boolean
-            isCatalogVisible: boolean
-          }>(
-            `SELECT
-               is_active AS "isActive",
-               is_sellable AS "isSellable",
-               is_catalog_visible AS "isCatalogVisible"
-             FROM products
+          if (isCommercialFieldUpdate(input)) {
+            const currentProductResult = await client.query<{
+              isActive: boolean
+              isSellable: boolean
+              isCatalogVisible: boolean
+            }>(
+              `SELECT
+                 is_active AS "isActive",
+                 is_sellable AS "isSellable",
+                 is_catalog_visible AS "isCatalogVisible"
+               FROM products
+               WHERE organization_id = $1
+                 AND id = $2
+               LIMIT 1`,
+              [organizationId, id],
+            )
+            const currentProduct = currentProductResult.rows[0]
+
+            if (!currentProduct) {
+              abortTransaction(404, { message: 'Producto no encontrado.' })
+            }
+
+            if (!currentProduct.isActive) {
+              abortTransaction(400, { message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+            }
+
+            const nextIsSellable = input.isSellable ?? currentProduct.isSellable
+            const nextIsCatalogVisible = input.isCatalogVisible ?? currentProduct.isCatalogVisible
+
+            if (!nextIsSellable && nextIsCatalogVisible) {
+              abortTransaction(400, { message: 'Un producto visible en catalogo debe ser vendible.' })
+            }
+          }
+
+          const result = await client.query(
+            `UPDATE products
+             SET ${assignments.join(', ')}
              WHERE organization_id = $1
                AND id = $2
-             LIMIT 1`,
-            [organizationId, id],
+             RETURNING
+               id,
+               name,
+               sku,
+               unit,
+               product_type AS "productType",
+               cost,
+               is_sellable AS "isSellable",
+               is_catalog_visible AS "isCatalogVisible",
+               sale_price AS "salePrice",
+               category_id AS "categoryId",
+               is_active AS "isActive",
+               created_at AS "createdAt"`,
+            values,
           )
-          const currentProduct = currentProductResult.rows[0]
 
-          if (!currentProduct) {
-            await rollbackTransaction(client)
-            return reply.code(404).send({ message: 'Producto no encontrado.' })
+          const product = result.rows[0]
+          if (!product) {
+            abortTransaction(404, { message: 'Producto no encontrado.' })
           }
 
-          if (!currentProduct.isActive) {
-            await rollbackTransaction(client)
-            return reply
-              .code(400)
-              .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
-          }
+          product.categoryName = product.categoryId
+            ? await getCategoryName(client, organizationId, product.categoryId)
+            : null
 
-          const nextIsSellable = input.isSellable ?? currentProduct.isSellable
-          const nextIsCatalogVisible = input.isCatalogVisible ?? currentProduct.isCatalogVisible
-
-          if (!nextIsSellable && nextIsCatalogVisible) {
-            await rollbackTransaction(client)
-            return reply
-              .code(400)
-              .send({ message: 'Un producto visible en catalogo debe ser vendible.' })
-          }
-        }
-
-        const result = await client.query(
-          `UPDATE products
-           SET ${assignments.join(', ')}
-           WHERE organization_id = $1
-             AND id = $2
-           RETURNING
-             id,
-             name,
-             sku,
-             unit,
-             product_type AS "productType",
-             cost,
-             is_sellable AS "isSellable",
-             is_catalog_visible AS "isCatalogVisible",
-             sale_price AS "salePrice",
-             category_id AS "categoryId",
-             is_active AS "isActive",
-             created_at AS "createdAt"`,
-          values,
-        )
-
-        const product = result.rows[0]
-        if (!product) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Producto no encontrado.' })
-        }
-
-        product.categoryName = product.categoryId
-          ? await getCategoryName(client, organizationId, product.categoryId)
-          : null
-
-        await client.query('COMMIT')
-
-        return { product }
+          return { product }
+        })
       } catch (error: unknown) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )
@@ -611,95 +583,87 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       const { id } = productIdParamsSchema.parse(request.params)
       const input = createProductCutOptionSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
 
       try {
-        await client.query('BEGIN')
+        const created = await withTransaction(async (client) => {
 
-        const productResult = await client.query<{ id: string; isActive: boolean }>(
-          `SELECT id, is_active AS "isActive"
-           FROM products
-           WHERE organization_id = $1
-             AND id = $2
-           LIMIT 1`,
-          [organizationId, id],
-        )
-        const product = productResult.rows[0]
-
-        if (!product) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Producto no encontrado.' })
-        }
-
-        if (!product.isActive) {
-          await rollbackTransaction(client)
-          return reply
-            .code(400)
-            .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
-        }
-
-        const cutTypeResult = await client.query<{ id: string }>(
-          `SELECT id
-           FROM cut_types
-           WHERE organization_id = $1
-             AND id = $2
-             AND is_active = true
-           LIMIT 1`,
-          [organizationId, input.cutTypeId],
-        )
-
-        if (!cutTypeResult.rows[0]) {
-          await rollbackTransaction(client)
-          return reply.code(400).send({ message: 'No se puede asignar un tipo de corte inexistente o inactivo.' })
-        }
-
-        if (input.isDefault) {
-          await client.query(
-            `UPDATE product_cut_options
-             SET is_default = false,
-                 updated_at = NOW()
+          const productResult = await client.query<{ id: string; isActive: boolean }>(
+            `SELECT id, is_active AS "isActive"
+             FROM products
              WHERE organization_id = $1
-               AND product_id = $2
-               AND is_active = true`,
+               AND id = $2
+             LIMIT 1`,
             [organizationId, id],
           )
-        }
+          const product = productResult.rows[0]
 
-        const result = await client.query(
-          `INSERT INTO product_cut_options (
-             organization_id,
-             product_id,
-             cut_type_id,
-             is_default,
-             price_modifier,
-             sort_order
-           )
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id`,
-          [
-            organizationId,
-            id,
-            input.cutTypeId,
-            input.isDefault,
-            input.priceModifier,
-            input.sortOrder,
-          ],
-        )
+          if (!product) {
+            abortTransaction(404, { message: 'Producto no encontrado.' })
+          }
 
-        await client.query('COMMIT')
+          if (!product.isActive) {
+            abortTransaction(400, { message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+          }
 
-        const cutOptions = await getProductCutOptions(pool, organizationId, id)
-        const cutOption = cutOptions.find((option: { id: string }) => option.id === result.rows[0].id)
+          const cutTypeResult = await client.query<{ id: string }>(
+            `SELECT id
+             FROM cut_types
+             WHERE organization_id = $1
+               AND id = $2
+               AND is_active = true
+             LIMIT 1`,
+            [organizationId, input.cutTypeId],
+          )
 
-        return reply.code(201).send({ cutOption, cutOptions })
+          if (!cutTypeResult.rows[0]) {
+            abortTransaction(400, { message: 'No se puede asignar un tipo de corte inexistente o inactivo.' })
+          }
+
+          if (input.isDefault) {
+            await client.query(
+              `UPDATE product_cut_options
+               SET is_default = false,
+                   updated_at = NOW()
+               WHERE organization_id = $1
+                 AND product_id = $2
+                 AND is_active = true`,
+              [organizationId, id],
+            )
+          }
+
+          const result = await client.query(
+            `INSERT INTO product_cut_options (
+               organization_id,
+               product_id,
+               cut_type_id,
+               is_default,
+               price_modifier,
+               sort_order
+             )
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id`,
+            [
+              organizationId,
+              id,
+              input.cutTypeId,
+              input.isDefault,
+              input.priceModifier,
+              input.sortOrder,
+            ],
+          )
+
+          const cutOptions = await getProductCutOptions(client, organizationId, id)
+          const cutOption = cutOptions.find((option: { id: string }) => option.id === result.rows[0].id)
+
+          return { cutOption, cutOptions }
+        })
+
+        return reply.code(201).send(created)
       } catch (error: unknown) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: 'Ese corte ya esta asignado al producto.' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )
@@ -711,134 +675,123 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       const { id, optionId } = productCutOptionParamsSchema.parse(request.params)
       const input = updateProductCutOptionSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const client = await pool.connect()
 
       try {
-        await client.query('BEGIN')
+        return await withTransaction(async (client) => {
 
-        const productResult = await client.query<{ isActive: boolean }>(
-          `SELECT is_active AS "isActive"
-           FROM products
-           WHERE organization_id = $1
-             AND id = $2
-           LIMIT 1`,
-          [organizationId, id],
-        )
-        const product = productResult.rows[0]
-
-        if (!product) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Producto no encontrado.' })
-        }
-
-        if (!product.isActive) {
-          await rollbackTransaction(client)
-          return reply
-            .code(400)
-            .send({ message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
-        }
-
-        const optionResult = await client.query<{
-          id: string
-          cutTypeId: string
-          isActive: boolean
-          isDefault: boolean
-        }>(
-          `SELECT
-             id,
-             cut_type_id AS "cutTypeId",
-             is_active AS "isActive",
-             is_default AS "isDefault"
-           FROM product_cut_options
-           WHERE organization_id = $1
-             AND product_id = $2
-             AND id = $3
-           LIMIT 1`,
-          [organizationId, id, optionId],
-        )
-        const option = optionResult.rows[0]
-
-        if (!option) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Opcion de corte no encontrada.' })
-        }
-
-        const nextIsActive = input.isActive ?? option.isActive
-        const nextIsDefault = nextIsActive ? input.isDefault ?? option.isDefault : false
-
-        if (nextIsActive) {
-          const cutTypeResult = await client.query(
-            `SELECT id
-             FROM cut_types
+          const productResult = await client.query<{ isActive: boolean }>(
+            `SELECT is_active AS "isActive"
+             FROM products
              WHERE organization_id = $1
                AND id = $2
-               AND is_active = true
              LIMIT 1`,
-            [organizationId, option.cutTypeId],
+            [organizationId, id],
           )
+          const product = productResult.rows[0]
 
-          if (!cutTypeResult.rows[0]) {
-            await rollbackTransaction(client)
-            return reply.code(400).send({ message: 'No se puede activar una opcion con tipo de corte inactivo.' })
+          if (!product) {
+            abortTransaction(404, { message: 'Producto no encontrado.' })
           }
-        }
 
-        if (nextIsDefault) {
-          await client.query(
-            `UPDATE product_cut_options
-             SET is_default = false,
-                 updated_at = NOW()
+          if (!product.isActive) {
+            abortTransaction(400, { message: 'Un producto inactivo no acepta nueva configuracion comercial.' })
+          }
+
+          const optionResult = await client.query<{
+            id: string
+            cutTypeId: string
+            isActive: boolean
+            isDefault: boolean
+          }>(
+            `SELECT
+               id,
+               cut_type_id AS "cutTypeId",
+               is_active AS "isActive",
+               is_default AS "isDefault"
+             FROM product_cut_options
              WHERE organization_id = $1
                AND product_id = $2
-               AND id <> $3
-               AND is_active = true`,
+               AND id = $3
+             LIMIT 1`,
             [organizationId, id, optionId],
           )
-        }
+          const option = optionResult.rows[0]
 
-        const assignments: string[] = ['is_active = $4', 'is_default = $5', 'updated_at = NOW()']
-        const values: Array<string | number | boolean> = [
-          organizationId,
-          id,
-          optionId,
-          nextIsActive,
-          nextIsDefault,
-        ]
+          if (!option) {
+            abortTransaction(404, { message: 'Opcion de corte no encontrada.' })
+          }
 
-        if (input.priceModifier !== undefined) {
-          values.push(input.priceModifier)
-          assignments.push(`price_modifier = $${values.length}`)
-        }
+          const nextIsActive = input.isActive ?? option.isActive
+          const nextIsDefault = nextIsActive ? input.isDefault ?? option.isDefault : false
 
-        if (input.sortOrder !== undefined) {
-          values.push(input.sortOrder)
-          assignments.push(`sort_order = $${values.length}`)
-        }
+          if (nextIsActive) {
+            const cutTypeResult = await client.query(
+              `SELECT id
+               FROM cut_types
+               WHERE organization_id = $1
+                 AND id = $2
+                 AND is_active = true
+               LIMIT 1`,
+              [organizationId, option.cutTypeId],
+            )
 
-        const result = await client.query(
-          `UPDATE product_cut_options
-           SET ${assignments.join(', ')}
-           WHERE organization_id = $1
-             AND product_id = $2
-             AND id = $3
-           RETURNING id`,
-          values,
-        )
+            if (!cutTypeResult.rows[0]) {
+              abortTransaction(400, { message: 'No se puede activar una opcion con tipo de corte inactivo.' })
+            }
+          }
 
-        await client.query('COMMIT')
+          if (nextIsDefault) {
+            await client.query(
+              `UPDATE product_cut_options
+               SET is_default = false,
+                   updated_at = NOW()
+               WHERE organization_id = $1
+                 AND product_id = $2
+                 AND id <> $3
+                 AND is_active = true`,
+              [organizationId, id, optionId],
+            )
+          }
 
-        const cutOptions = await getProductCutOptions(pool, organizationId, id)
-        const cutOption = cutOptions.find((entry: { id: string }) => entry.id === result.rows[0].id)
+          const assignments: string[] = ['is_active = $4', 'is_default = $5', 'updated_at = NOW()']
+          const values: Array<string | number | boolean> = [
+            organizationId,
+            id,
+            optionId,
+            nextIsActive,
+            nextIsDefault,
+          ]
 
-        return { cutOption, cutOptions }
+          if (input.priceModifier !== undefined) {
+            values.push(input.priceModifier)
+            assignments.push(`price_modifier = $${values.length}`)
+          }
+
+          if (input.sortOrder !== undefined) {
+            values.push(input.sortOrder)
+            assignments.push(`sort_order = $${values.length}`)
+          }
+
+          const result = await client.query(
+            `UPDATE product_cut_options
+             SET ${assignments.join(', ')}
+             WHERE organization_id = $1
+               AND product_id = $2
+               AND id = $3
+             RETURNING id`,
+            values,
+          )
+
+          const cutOptions = await getProductCutOptions(client, organizationId, id)
+          const cutOption = cutOptions.find((entry: { id: string }) => entry.id === result.rows[0].id)
+
+          return { cutOption, cutOptions }
+        })
       } catch (error: unknown) {
-        await rollbackTransaction(client)
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: 'El producto ya tiene una opcion de corte default activa.' })
         }
         throw error
-      } finally {
-        client.release()
       }
     },
   )

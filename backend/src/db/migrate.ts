@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pool } from './pool.js'
+import { pool, readinessPool } from './pool.js'
+import { withTransaction } from './transaction.js'
 
 const migrationsDirectory = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 
@@ -26,27 +27,21 @@ async function migrate() {
     }
 
     const sql = await readFile(join(migrationsDirectory, file), 'utf8')
-    const client = await pool.connect()
-
-    try {
-      await client.query('BEGIN')
+    await withTransaction(async (client) => {
+      // Los timeouts de sesion del pool estan pensados para requests de la API, no para DDL.
+      await client.query('SET LOCAL statement_timeout = 0')
+      await client.query('SET LOCAL lock_timeout = 0')
       await client.query(sql)
       await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file])
-      await client.query('COMMIT')
-      console.info(`Applied migration ${file}`)
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
+    console.info(`Applied migration ${file}`)
   }
 }
 
 migrate()
-  .then(() => pool.end())
+  .then(() => Promise.all([pool.end(), readinessPool.end()]))
   .catch(async (error: unknown) => {
     console.error('Migration failed', error)
-    await pool.end()
+    await Promise.all([pool.end(), readinessPool.end()])
     process.exitCode = 1
   })

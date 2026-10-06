@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { getOrganizationAccess, getRoleCapabilities } from '../../security/authorization.js'
 import type { MembershipRole } from './auth.types.js'
 
@@ -174,22 +175,20 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/register', async (request, reply) => {
     const input = registerSchema.parse(request.body)
+    // El hash se calcula antes de tomar una conexion: no retiene un slot del pool mientras corre.
     const passwordHash = await bcrypt.hash(input.password, 12)
-    const client = await pool.connect()
 
-    try {
-      await client.query('BEGIN')
-
+    const { user, organization, membership } = await withTransaction(async (client) => {
       const existingUser = await client.query('SELECT 1 FROM users WHERE email = $1', [input.email])
       if (existingUser.rowCount) {
-        return reply.code(409).send({ message: 'El email ya está registrado.' })
+        abortTransaction(409, { message: 'El email ya está registrado.' })
       }
 
       const existingOrganization = await client.query('SELECT 1 FROM organizations WHERE slug = $1', [
         input.organizationSlug,
       ])
       if (existingOrganization.rowCount) {
-        return reply.code(409).send({ message: 'El identificador de organización ya está en uso.' })
+        abortTransaction(409, { message: 'El identificador de organización ya está en uso.' })
       }
 
       const user = await client.query<{ id: string; email: string; fullName: string }>(
@@ -211,31 +210,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         [user.rows[0].id, organization.rows[0].id],
       )
 
-      await client.query('COMMIT')
+      return { user: user.rows[0], organization: organization.rows[0], membership: membership.rows[0] }
+    })
 
-      const activeMembership = {
-        ...membership.rows[0],
-        organizationName: organization.rows[0].name,
-      }
-      const token = createToken(app, user.rows[0].id, activeMembership)
-
-      return reply.code(201).send({
-        token,
-        user: user.rows[0],
-        organization: {
-          id: organization.rows[0].id,
-          name: organization.rows[0].name,
-          slug: organization.rows[0].slug,
-          role: activeMembership.role,
-          capabilities: getRoleCapabilities(activeMembership.role),
-        },
-      })
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
+    const activeMembership = {
+      ...membership,
+      organizationName: organization.name,
     }
+    const token = createToken(app, user.id, activeMembership)
+
+    return reply.code(201).send({
+      token,
+      user,
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        role: activeMembership.role,
+        capabilities: getRoleCapabilities(activeMembership.role),
+      },
+    })
   })
 
   app.post('/login', async (request, reply) => {

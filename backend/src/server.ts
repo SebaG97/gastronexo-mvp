@@ -1,6 +1,6 @@
 import { buildApp } from './app.js'
 import { config } from './config.js'
-import { pool } from './db/pool.js'
+import { pool, readinessPool } from './db/pool.js'
 
 const app = buildApp()
 const shutdownSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
@@ -16,12 +16,14 @@ function extractErrorCode(error: unknown) {
   return undefined
 }
 
-pool.on('error', (error) => {
-  app.log.warn(
-    { code: extractErrorCode(error) },
-    'Se detectó una interrupción en una conexión inactiva de PostgreSQL.',
-  )
-})
+for (const databasePool of [pool, readinessPool]) {
+  databasePool.on('error', (error) => {
+    app.log.warn(
+      { code: extractErrorCode(error) },
+      'Se detectó una interrupción en una conexión inactiva de PostgreSQL.',
+    )
+  })
+}
 
 async function checkDatabaseReadiness() {
   try {
@@ -51,7 +53,7 @@ async function shutdown(signal: NodeJS.Signals | 'startup_failure') {
   }
 
   try {
-    await pool.end()
+    await Promise.all([pool.end(), readinessPool.end()])
   } catch (error) {
     app.log.error({ code: extractErrorCode(error) }, 'Error al cerrar el pool de PostgreSQL.')
   }

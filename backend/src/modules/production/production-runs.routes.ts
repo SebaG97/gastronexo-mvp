@@ -1,10 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
-import { lockBalances, recordMovement, type LockedBalance } from '../inventory/stock-ledger.js'
-
-type DbClient = Pick<typeof pool, 'query'>
+import {
+  ensureBalances,
+  lockBalances,
+  lockProductCosts,
+  recordMovement,
+  type LockedBalance,
+} from '../inventory/stock-ledger.js'
 
 const productionRunIdParamsSchema = z.object({
   id: z.string().uuid(),
@@ -82,14 +87,6 @@ function normalizeOptionalText(value: string | null | undefined) {
   return trimmed.length ? trimmed : null
 }
 
-async function rollbackTransaction(client: DbClient) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
-}
-
 async function getNextRunNumber(client: DbClient, organizationId: string) {
   const result = await client.query<{ nextNumber: number }>(
     `INSERT INTO production_run_sequences (organization_id, last_number)
@@ -118,9 +115,9 @@ async function getGlobalQuantity(client: DbClient, organizationId: string, produ
 
 /**
  * Calcula consumo, disponibilidad y costo de producir `quantity` del producto con su receta
- * activa. Con `lock`, bloquea (FOR UPDATE) los balances de ingredientes y terminado y la fila
- * del producto terminado: es la misma funcion que usa el registro real, asi la vista previa
- * y la produccion no pueden divergir.
+ * activa. Con `lock`, bloquea (FOR UPDATE) los balances de ingredientes y terminado y despues la
+ * fila de costo del terminado (FOR NO KEY UPDATE): es la misma funcion que usa el registro real,
+ * asi la vista previa y la produccion no pueden divergir.
  */
 async function planProduction(
   client: DbClient,
@@ -249,12 +246,7 @@ async function planProduction(
   if (options.lock) {
     // El balance del terminado debe existir antes de bloquear: si una transaccion concurrente
     // lo crea a mitad de camino, las demas lo bloquearian en otro orden (deadlock).
-    await client.query(
-      `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
-       VALUES ($1, $2, $3, 0)
-       ON CONFLICT (warehouse_id, product_id) DO NOTHING`,
-      [organizationId, input.warehouseId, product.id],
-    )
+    await ensureBalances(client, organizationId, input.warehouseId, [product.id])
   }
 
   const balances = options.lock
@@ -293,15 +285,9 @@ async function planProduction(
   const totalCost = roundMoney(ingredients.reduce((total, item) => total + item.subtotal, 0))
   const unitCost = Number((totalCost / quantity).toFixed(4))
 
-  const costResult = await client.query<{ cost: string }>(
-    `SELECT cost::text AS cost
-     FROM products
-     WHERE organization_id = $1
-       AND id = $2
-     ${options.lock ? 'FOR UPDATE' : ''}`,
-    [organizationId, product.id],
-  )
-  const currentCost = Number(costResult.rows[0]?.cost ?? '0')
+  const currentCost = options.lock
+    ? ((await lockProductCosts(client, organizationId, [product.id])).get(product.id) ?? 0)
+    : await readProductCost(client, organizationId, product.id)
   const currentStock = await getGlobalQuantity(client, organizationId, product.id)
   const resultingCost = roundMoney((currentStock * currentCost + totalCost) / (currentStock + quantity))
 
@@ -318,6 +304,15 @@ async function planProduction(
     resultingCost,
     balances,
   }
+}
+
+async function readProductCost(client: DbClient, organizationId: string, productId: string) {
+  const result = await client.query<{ cost: string }>(
+    'SELECT cost::text AS cost FROM products WHERE organization_id = $1 AND id = $2',
+    [organizationId, productId],
+  )
+
+  return Number(result.rows[0]?.cost ?? '0')
 }
 
 async function readBalances(client: DbClient, organizationId: string, warehouseId: string, productIds: string[]) {
@@ -582,21 +577,16 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
       const input = createProductionRunSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      const created = await withTransaction(async (client) => {
         const plan = await planProduction(client, organizationId, input, { lock: true })
         if (!plan.ok) {
-          await rollbackTransaction(client)
-          return reply.code(plan.statusCode).send({ message: plan.message, code: plan.code })
+          abortTransaction(plan.statusCode, { message: plan.message, code: plan.code })
         }
 
         const shortages = toShortages(plan)
         if (shortages.length > 0) {
-          await rollbackTransaction(client)
-          return reply.code(409).send({
+          abortTransaction(409, {
             message: `Materia prima insuficiente en ${plan.warehouse.name}.`,
             code: 'insufficient_stock',
             warehouseId: plan.warehouse.id,
@@ -727,19 +717,14 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
           [organizationId, plan.product.id, plan.resultingCost],
         )
 
-        await client.query('COMMIT')
-
         const productionRun = await getProductionRunById(client, organizationId, runId)
-        return reply.code(201).send({
+        return {
           productionRun,
           resultingCost: plan.resultingCost.toFixed(2),
-        })
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+        }
+      })
+
+      return reply.code(201).send(created)
     },
   )
 
@@ -750,16 +735,13 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     '/:id/void',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator') },
-    async (request, reply) => {
+    async (request) => {
       const { id } = productionRunIdParamsSchema.parse(request.params)
       const input = voidProductionRunSchema.parse(request.body ?? {})
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      return withTransaction(async (client) => {
         const runResult = await client.query<{
           productId: string
           productName: string
@@ -788,13 +770,11 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
 
         const run = runResult.rows[0]
         if (!run) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Producción no encontrada.' })
+          abortTransaction(404, { message: 'Producción no encontrada.' })
         }
 
         if (run.status === 'voided') {
-          await rollbackTransaction(client)
-          return reply.code(409).send({ message: `${run.runNumber} ya está anulada.`, code: 'already_voided' })
+          abortTransaction(409, { message: `${run.runNumber} ya está anulada.`, code: 'already_voided' })
         }
 
         const itemsResult = await client.query<{ productId: string; quantity: string; subtotal: string }>(
@@ -806,10 +786,10 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
         )
 
         const quantityProduced = Number(run.quantityProduced)
-        const balances = await lockBalances(client, organizationId, run.warehouseId, [
-          ...itemsResult.rows.map((item) => item.productId),
-          run.productId,
-        ])
+        const ingredientIds = itemsResult.rows.map((item) => item.productId)
+        // Los ingredientes vuelven al deposito: sus balances se aseguran antes de bloquear.
+        await ensureBalances(client, organizationId, run.warehouseId, ingredientIds)
+        const balances = await lockBalances(client, organizationId, run.warehouseId, [...ingredientIds, run.productId])
 
         const outputBalance = balances.get(run.productId)
         const outputAvailable = outputBalance
@@ -817,8 +797,7 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
           : 0
 
         if (!outputBalance || outputAvailable < quantityProduced) {
-          await rollbackTransaction(client)
-          return reply.code(409).send({
+          abortTransaction(409, {
             message: `No se puede anular ${run.runNumber}: de ${run.productName} hay ${outputAvailable.toFixed(3)} disponibles y la producción sumó ${quantityProduced.toFixed(3)} (el resto está reservado o vendido).`,
             code: 'output_not_available',
             productName: run.productName,
@@ -828,18 +807,8 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
           })
         }
 
-        // Producto row locks en orden fijo, despues de los balances (mismo orden que producir).
-        const affectedProductIds = [run.productId, ...itemsResult.rows.map((item) => item.productId)].sort()
-        const costsResult = await client.query<{ id: string; cost: string }>(
-          `SELECT id, cost::text AS cost
-           FROM products
-           WHERE organization_id = $1
-             AND id = ANY($2::uuid[])
-           ORDER BY id
-           FOR UPDATE`,
-          [organizationId, affectedProductIds],
-        )
-        const costsById = new Map(costsResult.rows.map((row) => [row.id, Number(row.cost)]))
+        // Filas de costo en orden fijo, despues de los balances (mismo orden que producir).
+        const costsById = await lockProductCosts(client, organizationId, [run.productId, ...ingredientIds])
 
         // Quitar el terminado y revertir su costo promedio (piso 0).
         const outputBalanceAfter = roundQuantity(outputBalance.quantity - quantityProduced)
@@ -927,16 +896,9 @@ export const productionRunsRoutes: FastifyPluginAsync = async (app) => {
           [organizationId, id, userId, normalizeOptionalText(input.reason)],
         )
 
-        await client.query('COMMIT')
-
         const productionRun = await getProductionRunById(client, organizationId, id)
         return { productionRun }
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      })
     },
   )
 }

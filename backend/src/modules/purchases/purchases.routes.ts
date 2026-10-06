@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
-import { recordMovement } from '../inventory/stock-ledger.js'
+import { ensureBalances, lockBalances, lockProductCosts, recordMovement } from '../inventory/stock-ledger.js'
 
 const purchaseIdParamsSchema = z.object({
   id: z.string().uuid(),
@@ -69,16 +70,8 @@ function normalizeOptionalText(value: string | undefined) {
   return trimmed.length ? trimmed : null
 }
 
-async function rollbackTransaction(client: Pick<typeof pool, 'query'>) {
-  try {
-    await client.query('ROLLBACK')
-  } catch {
-    return
-  }
-}
-
 async function getPurchaseById(
-  client: Pick<typeof pool, 'query'>,
+  client: DbClient,
   organizationId: string,
   purchaseId: string,
 ) {
@@ -292,11 +285,8 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
       const input = createPurchaseSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
       const userId = request.organizationAccess!.user.id
-      const client = await pool.connect()
 
-      try {
-        await client.query('BEGIN')
-
+      const created = await withTransaction(async (client) => {
         const supplierResult = await client.query<{ id: string; isActive: boolean }>(
           `SELECT id, is_active AS "isActive"
            FROM suppliers
@@ -307,13 +297,11 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (!supplierResult.rows[0]) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Proveedor no encontrado.' })
+          abortTransaction(404, { message: 'Proveedor no encontrado.' })
         }
 
         if (!supplierResult.rows[0].isActive) {
-          await rollbackTransaction(client)
-          return reply.code(400).send({ message: 'No se puede registrar una compra con un proveedor inactivo.' })
+          abortTransaction(400, { message: 'No se puede registrar una compra con un proveedor inactivo.' })
         }
 
         const warehouseResult = await client.query<{ id: string; isActive: boolean }>(
@@ -326,13 +314,11 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (!warehouseResult.rows[0]) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Depósito no encontrado.' })
+          abortTransaction(404, { message: 'Depósito no encontrado.' })
         }
 
         if (!warehouseResult.rows[0].isActive) {
-          await rollbackTransaction(client)
-          return reply.code(400).send({ message: 'No se puede registrar una compra en un depÃ³sito inactivo.' })
+          abortTransaction(400, { message: 'No se puede registrar una compra en un depÃ³sito inactivo.' })
         }
 
         const productIds = [...new Set(input.items.map((item) => item.productId))]
@@ -354,16 +340,14 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
         )
 
         if (productsResult.rows.length !== productIds.length) {
-          await rollbackTransaction(client)
-          return reply.code(404).send({ message: 'Producto no encontrado.' })
+          abortTransaction(404, { message: 'Producto no encontrado.' })
         }
 
         const productsById = new Map(productsResult.rows.map((product) => [product.id, product]))
         for (const item of input.items) {
           const product = productsById.get(item.productId)
           if (!product || !product.isActive || product.productType !== 'raw_material') {
-            await rollbackTransaction(client)
-            return reply.code(400).send({
+            abortTransaction(400, {
               message: 'Solo se permite comprar materias primas activas.',
             })
           }
@@ -467,7 +451,13 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
           resultingCost: string
         }> = []
 
-        // Orden fijo por producto: mismo orden de bloqueo que las reservas de pedidos.
+        // Orden de bloqueo canonico (igual que pedidos y produccion): primero se crean los balances
+        // faltantes, despues se bloquean todos ordenados y recien despues las filas de costo.
+        const purchasedProductIds = [...aggregatedByProduct.keys()]
+        await ensureBalances(client, organizationId, input.warehouseId, purchasedProductIds)
+        const balances = await lockBalances(client, organizationId, input.warehouseId, purchasedProductIds)
+        const costsById = await lockProductCosts(client, organizationId, purchasedProductIds)
+
         const sortedAggregates = [...aggregatedByProduct.entries()].sort(([left], [right]) =>
           left.localeCompare(right),
         )
@@ -476,30 +466,20 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
           const incomingQuantity = Number(aggregate.quantity.toFixed(3))
           const incomingTotal = Number(aggregate.total.toFixed(2))
 
-          const balanceResult = await client.query<{ quantity: string }>(
-            `SELECT quantity::text AS quantity
-             FROM inventory_balances
+          const previousQuantity = balances.get(productId)?.quantity ?? 0
+          const newQuantity = Number((previousQuantity + incomingQuantity).toFixed(3))
+
+          const updateBalanceResult = await client.query<{ quantity: string }>(
+            `UPDATE inventory_balances
+             SET quantity = quantity + $4,
+                 updated_at = NOW()
              WHERE organization_id = $1
                AND warehouse_id = $2
                AND product_id = $3
-             FOR UPDATE`,
-            [organizationId, input.warehouseId, productId],
-          )
-
-          const previousQuantity = Number(balanceResult.rows[0]?.quantity ?? '0')
-          const newQuantity = Number((previousQuantity + incomingQuantity).toFixed(3))
-
-          const upsertBalanceResult = await client.query<{ quantity: string }>(
-            `INSERT INTO inventory_balances (organization_id, warehouse_id, product_id, quantity)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (warehouse_id, product_id)
-             DO UPDATE SET
-               quantity = inventory_balances.quantity + EXCLUDED.quantity,
-               updated_at = NOW()
              RETURNING quantity::text AS quantity`,
             [organizationId, input.warehouseId, productId, incomingQuantity],
           )
-          const balanceAfter = Number(upsertBalanceResult.rows[0].quantity)
+          const balanceAfter = Number(updateBalanceResult.rows[0].quantity)
 
           await client.query(
             `INSERT INTO inventory_adjustments (
@@ -540,16 +520,7 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
             createdBy: userId,
           })
 
-          const productCostResult = await client.query<{ cost: string }>(
-            `SELECT cost::text AS cost
-             FROM products
-             WHERE organization_id = $1
-               AND id = $2
-             FOR UPDATE`,
-            [organizationId, productId],
-          )
-
-          const previousCost = Number(productCostResult.rows[0]?.cost ?? '0')
+          const previousCost = costsById.get(productId) ?? 0
           const globalStockResult = await client.query<{ totalQuantity: string }>(
             `SELECT COALESCE(SUM(quantity), 0)::text AS "totalQuantity"
              FROM inventory_balances
@@ -591,20 +562,11 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
           })
         }
 
-        await client.query('COMMIT')
+        const purchase = await getPurchaseById(client, organizationId, purchaseId)
+        return { purchase, stockChanges }
+      })
 
-        const purchase = await getPurchaseById(pool, organizationId, purchaseId)
-
-        return reply.code(201).send({
-          purchase,
-          stockChanges,
-        })
-      } catch (error) {
-        await rollbackTransaction(client)
-        throw error
-      } finally {
-        client.release()
-      }
+      return reply.code(201).send(created)
     },
   )
 }
