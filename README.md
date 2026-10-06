@@ -79,6 +79,7 @@ Backend (`backend/.env`):
 - `JWT_SECRET`
 - `JWT_EXPIRES_IN` (ejemplo: `8h`)
 - `FRONTEND_ORIGIN`
+- Opcionales, pool y protecciones de PostgreSQL (defaults en `backend/.env.example`): `DB_POOL_MAX`, `DB_POOL_CONNECTION_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, `DB_READY_TIMEOUT_MS`
 
 Frontend (`frontend/.env`):
 
@@ -97,6 +98,21 @@ Esperado con PostgreSQL activo:
 
 - `/health` => `200` con `{"status":"ok"}`
 - `/ready` => `200` con `{"status":"ready"}`
+
+`/health` no consulta la base. `/ready` usa una conexión propia con timeout corto (`DB_READY_TIMEOUT_MS`): responde `200` o `503` aunque el pool de la API esté agotado.
+
+### Pruebas de carga y consistencia
+
+Desde `backend/`, contra la API y la base **locales**. Los scripts crean siempre una organización de prueba nueva y no tocan datos existentes. Se niegan a correr contra un host no local salvo con `STRESS_ALLOW_REMOTE=1`.
+
+```bash
+npm run stress:writes       # N=10, 20 y 30 escenarios paralelos x 3 rondas, con /health y /ready polleados (timeout 2 s)
+npm run stress:exhaustion   # levanta su propia API con DB_POOL_MAX=2 en el puerto 3199 y dispara 30 escenarios
+npm run check:consistency   # invariantes de stock y numeración sobre toda la base (solo lectura)
+```
+
+- `stress:writes` usa `API_URL` (default `http://127.0.0.1:3000`), `STRESS_LEVELS`, `STRESS_ROUNDS` y `STRESS_REQUEST_TIMEOUT_MS`. Termina con código ≠ 0 si hubo requests colgadas, respuestas 5xx, `/ready` o `/health` sin respuesta o consistencia en rojo. También cuenta los *deadlocks* del log del contenedor `gastronexo-postgres`.
+- `stress:exhaustion` no necesita la API levantada: la arranca con `tsx` usando `backend/.env`.
 
 ### Probar login y sesión local
 

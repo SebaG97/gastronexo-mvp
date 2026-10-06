@@ -1,5 +1,84 @@
 # Functional Readiness Plan
 
+## Misión 6.3 - Endurecimiento de conexiones y concurrencia
+
+Elimina el agotamiento del pool y los *deadlocks* en todo el backend, no solo en Producción, y deja pruebas de carga reutilizables antes del portal público. Sin features nuevas, sin cambios de contrato de API y sin migraciones.
+
+### Fase 0 - Preparación
+
+- Rama `sebag97-mvp-inicial` limpia. `pg_dump -Fc` fuera del repo: `~/gastronexo-backups/pre-mision-6.3-20261006-083417.dump` (215 KB).
+- La suite E2E de 6.2 (fuera del repo) dio **79/79** sobre el código sin tocar, como línea base.
+
+### Fase 1 - Auditoría (commit `7bcf58d`)
+
+El detalle por endpoint está en [`docs/concurrency-audit-6.3.md`](concurrency-audit-6.3.md). Resumen de los endpoints de escritura con hallazgos:
+
+| Endpoint | Tx | 2ª conexión con la tx abierta | Bloqueos (orden) | Hallazgo |
+| --- | --- | --- | --- | --- |
+| `POST /auth/register` | a mano | no | ninguno | **A1**: el 409 devolvía la conexión al pool con la transacción abierta (sin `ROLLBACK`) |
+| `POST /orders`, `PATCH /orders/:id`, `PATCH /orders/:id/status` | a mano | **sí**: `getOrderById(pool)` (y `getWarehouseName(pool)` en el 409) con el `client` retenido | `orders` → balances | **A2** |
+| `POST /purchases` | a mano | **sí**: `getPurchaseById(pool)` | intercalado `balance(p)` → `products(p) FOR UPDATE` por producto; balance faltante creado a mitad de la tx | **A2, A4, A5** |
+| `POST/PATCH /products/:id/cut-options` | a mano | **sí**: `getProductCutOptions(pool)` | ninguno | **A2** |
+| `POST /inventory/adjustments` | a mano | no | balance solo si ya existe | **A3**: dos ajustes sobre un balance inexistente leían 0 y desfasaban el ledger |
+| `POST /production-runs`, `POST /:id/void` | a mano | no (corregido en 6.2) | balances → `products FOR UPDATE` | **A5** |
+| Recetas, productos, categorías, depósitos, miembros | a mano | no | cabecera (`recipes`, `memberships`) | solo forma de abrir la tx |
+| Clientes, proveedores, cortes, altas simples | sin tx (una sentencia) | n/a | implícito | ok |
+
+Hallazgos de infraestructura (**A6**): pool con `connectionTimeoutMillis = 0` (espera infinita), sin `statement_timeout`, `lock_timeout` ni `idle_in_transaction_session_timeout`, `/ready` sobre el mismo pool y cualquier error de PostgreSQL (incluido `40P01`) respondido como 500. **A5** es el hallazgo menos obvio: `SELECT … FOR UPDATE` sobre `products` es incompatible con el `FOR KEY SHARE` que toma cada INSERT con FK a `products` (movimientos, ítems, balances), así que dos compras del mismo producto podían bloquearse en cruz aun con orden fijo. La auditoría no contradijo ninguna decisión de la misión.
+
+**Línea base medida** con los scripts de la Fase 3 sobre el código sin corregir (una ronda de N=10/20/30): **10 respuestas 500 por *deadlock*** (7 compras, 2 producciones, 1 anulación; 10 `deadlock detected` en el log de PostgreSQL), **`/ready` sin respuesta en 2 s** dos veces y **`check:consistency` en rojo**: 3 saldos con cantidad ≠ suma de movimientos, todos productos sin balance previo ajustados en paralelo (A3 reproducido).
+
+### Fase 2 - Correcciones (commit `7ad25b9`)
+
+- **Una transacción = una conexión.** `db/transaction.ts` expone `withTransaction(work)`, la única forma de abrir transacciones (las 17 aperturas manuales se reemplazaron, incluida `db:migrate`). `work` recibe solo el cliente transaccional (`DbClient`, sin `release` ni `connect`), y la relectura del resultado (`getOrderById`, `getPurchaseById`, `getProductCutOptions`, corrida, receta) se hace con ese cliente **dentro** de la transacción. Ya no queda ningún `pool.connect()` ni `BEGIN` fuera del helper.
+- Las respuestas de negocio dentro de la transacción (404, 400, 409 `insufficient_stock`, `already_voided`, etc.) se lanzan con `abortTransaction(status, body)`. El helper hace `ROLLBACK` y el error handler responde **el mismo status y body que antes**. Las respuestas exitosas se envían recién después del `COMMIT`.
+- **Reintento acotado:** ante `40P01` (*deadlock*) o `40001`, la transacción completa se reintenta hasta 3 intentos, liberando la conexión antes de esperar (20-100 ms). Si el `ROLLBACK` falla, la conexión se descarta en vez de volver al pool.
+- **Orden de bloqueo canónico**, documentado en el helper y en la auditoría:
+  1. cabecera del documento (`orders`, `production_runs`, `recipes`, `memberships`) `FOR UPDATE`;
+  2. `inventory_balances`: `ensureBalances` crea los faltantes con 0 (`ON CONFLICT DO NOTHING`, ordenado) **antes** de bloquear, y `lockBalances` bloquea `ORDER BY product_id, warehouse_id`;
+  3. costos de `products` con `lockProductCosts`: `FOR NO KEY UPDATE ORDER BY id` (serializa el recálculo del costo promedio sin chocar con las FK);
+  4. secuencias `PED-` / `PROD-`, al final.
+  Compras ahora asegura → bloquea todos los balances → bloquea todos los costos → aplica, en lugar de intercalar. Ajustes asegura el balance antes de bloquearlo (A3). Producción y anulación usan las mismas funciones.
+- **Pool configurable** (`config.ts`, `.env.example`): `DB_POOL_MAX=10`, `DB_POOL_CONNECTION_TIMEOUT_MS=3000`, `DB_POOL_IDLE_TIMEOUT_MS=30000`. **Protecciones de sesión** (parámetros de conexión de `pg`): `DB_STATEMENT_TIMEOUT_MS=15000`, `DB_LOCK_TIMEOUT_MS=5000`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=15000`. `db:migrate` las anula con `SET LOCAL` dentro de su transacción para no cortar DDL largo.
+- **Errores de infraestructura → 503** (`db/errors.ts`): pool agotado (`timeout exceeded when trying to connect`), `55P03` *lock timeout*, `57014` *statement timeout*, `25P03`, `53300`, `57P0x`, clase `08` y errores de red, y *deadlock* que persiste tras los reintentos. Responden `503 { message: 'El servicio está ocupado. Intentá de nuevo en unos segundos.', code: 'service_unavailable' }` con `Retry-After: 1`, sin detalles internos (el código SQL queda solo en el log como `warn`).
+- **`/health`** no toca la base. **`/ready`** usa `readinessPool`, un pool propio de una conexión con `DB_READY_TIMEOUT_MS=1000` (timeout de conexión y de sentencia) más un tope de tiempo propio: responde 200/503 aunque el pool de la API esté agotado.
+- Contratos, códigos de negocio y reglas de 5.2/6.1/6.2 sin cambios. Sin migraciones: `schema_migrations` sigue en 8 y las 8 se aplicaron sin errores con el runner nuevo sobre una base temporal vacía (luego eliminada).
+
+### Fase 3 - Pruebas de carga reutilizables (commit `4937c09`)
+
+En `backend/scripts/`, documentadas en el README. Siempre crean una organización nueva y se niegan a correr contra un host no local salvo con `STRESS_ALLOW_REMOTE=1`.
+
+- **`npm run stress:writes`**: N = 10, 20 y 30 escenarios en paralelo × 3 rondas. El ciclo mezcla pedido completo (crear → editar → confirmar → editar confirmado → preparar → listo → entregar), pedido cancelado (crear → confirmar → cancelar), compra de 4 materias primas en orden aleatorio, ajuste, dos ajustes simultáneos sobre un producto **sin balance**, producción, producción + anulación y alta de cliente. Todo sobre los mismos 6 productos, así que confirmar, entregar, producir y comprar compiten por los mismos balances y costos. `/health` y `/ready` se pollean en paralelo cada 250 ms con timeout de 2 s. Al final corre `check:consistency` y cuenta `deadlock detected` / `lock timeout` en el log del contenedor.
+- **`npm run stress:exhaustion`**: levanta su propia API en el puerto 3199 con `DB_POOL_MAX=2` y dispara 30 escenarios. Fase A con el timeout por defecto; fase B con `DB_POOL_CONNECTION_TIMEOUT_MS=100` para forzar el camino 503. Verifica 0 colgadas, 0 errores 5xx distintos de 503, probes siempre respondiendo y recuperación (`/ready` 200 + una escritura 201).
+- **`npm run check:consistency`**: en toda la base y en una transacción `REPEATABLE READ READ ONLY`, verifica saldo = suma de movimientos, movimientos sin saldo, movimientos sin documento de origen (por `source_type`), `reserved_quantity <= quantity`, sin negativos, **reservado = ítems de pedidos confirmados/en preparación/listos**, `PED-`/`PROD-` sin duplicados y secuencias no atrasadas respecto del último número emitido.
+
+### Verificación
+
+- `backend npm run build` y `frontend npm run build` sin errores (JS 289 kB / 77 kB gzip). `/health` y `/ready` → 200. `db:migrate` sin pendientes.
+- **3 corridas seguidas**, cada una con `stress:writes` + suite E2E de 6.2 + `stress:exhaustion`, contra una instancia de la API con el código nuevo:
+
+| Corrida | `stress:writes` (371 escrituras) | Probes `/health` · `/ready` | *Deadlocks* en PostgreSQL | `check:consistency` | Suite 6.2 | Agotamiento A (pool 2) | Agotamiento B (pool 2, timeout 100 ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0 colgadas, 0 5xx, 0 503, máx 857 ms | 24/24 · 24/24 (máx 44 ms) | 0 | OK | 79/79 | 68 ok en 1,1 s, 0 503 | 21 ok + 20 × 503 en 0,4 s, 0 5xx |
+| 2 | 0 colgadas, 0 5xx, 0 503, máx 679 ms | 18/18 · 18/18 | 0 | OK | 79/79 | 68 ok en 1,4 s, 0 503 | 15 ok + 21 × 503 en 0,5 s, 0 5xx |
+| 3 | 0 colgadas, 0 5xx, 0 503, máx 856 ms | 24/24 · 24/24 | 0 | OK | 79/79 | 68 ok en 1,1 s, 0 503 | 17 ok + 21 × 503 en 0,3 s, 0 5xx |
+
+  En el agotamiento, `/ready` respondió 200 en todas las muestras y la API se recuperó en 8-13 ms. En la fase B, cada 503 corta su escenario, por eso hay menos requests totales. En toda la sesión el log de la API no registró ningún error (nivel 50) ni respuestas 500.
+- **Caminos de error forzados** (prueba descartable, no versionada): dos transacciones que bloquean dos filas en orden inverso → PostgreSQL detecta el *deadlock*, `withTransaction` reintenta y **ambas confirman** (3 intentos en total, filas con el valor esperado). Una sesión externa retiene el balance con `FOR UPDATE` y se pide un ajuste por API → **503 `service_unavailable` a los 5,02 s** (`lock_timeout`) con `Retry-After: 1`. Con el bloqueo todavía tomado, `/ready` responde 200.
+- **A1:** cuatro registros con el mismo email → 201 + 3 × 409, y `pg_stat_activity` sin conexiones `idle in transaction`.
+- **Regresión funcional:** la suite E2E de 6.2 (compra → receta → vista previa → producción → pedido → confirmar → entregar → anular producción, negativos, permisos, concurrencia y consistencia global) dio **79/79** en las 3 corridas. Cancelar pedidos confirmados lo cubre además `stress:writes` (18 cancelaciones por corrida, todas 200, con la consistencia de reservas en verde).
+- **Datos de la línea base:** la corrida sobre el código viejo dejó 3 saldos desfasados (A3) en su organización de prueba (`Stress stress 1791287020824-434653`). Como el ledger es inmutable, se corrigieron con un ajuste compensatorio (`inventory_adjustments` + movimiento `adjustment`, motivo "Correccion mision 6.3 …"), sin tocar movimientos existentes. Fue la única escritura directa por SQL y afectó solo a esa organización de prueba.
+
+### Estado y pendientes
+
+- **Hallazgo prioritario de 6.2 cerrado:** Pedidos (`POST /`, `PATCH /:id`, `PATCH /:id/status`) y Compras ya no releen con una segunda conexión, y Compras ya no puede hacer *deadlock*. Lo confirman la línea base (10 × 500) frente a las 3 corridas limpias.
+- Fuera de alcance, documentados en la auditoría:
+  - **O1**: dos owners que se degradan en paralelo pueden dejar la organización sin owner. Se cuentan los owners sin bloquearlos.
+  - **W1**: inactivar un depósito no bloquea un ajuste concurrente.
+  - Registro concurrente con el mismo email o slug: la unicidad la garantiza la base, pero el perdedor recibe 500 (`23505`) en vez de 409. Es preexistente y no se cambió para no tocar el contrato.
+  - Rate limiting HTTP (7.1), mermas, portal público, mojibake (incluido `depÃ³sito` en Compras), H7/H8/H9.
+- Ajustar `DB_POOL_MAX` según `max_connections` de PostgreSQL en producción. Cada instancia de la API usa hasta `DB_POOL_MAX + 1` conexiones (la extra es `/ready`).
+
 ## Misión 6.2 - Producción: recetas y transformación de materia prima en producto terminado
 
 Recetas por producto terminado y producciones que consumen materia prima y suman terminado, con movimientos en el ledger inmutable de 6.1 y costo promedio ponderado. Reemplaza el placeholder de Producción.
@@ -81,7 +160,7 @@ Recetas por producto terminado y producciones que consumen materia prima y suman
 - El formulario de producción toma por defecto el primer depósito activo (orden alfabético), igual que Compras. Si hay varios depósitos conviene revisarlo antes de confirmar; la vista previa muestra el depósito elegido.
 - A 390 px, las columnas de costo de la vista previa quedan a la derecha del scroll de la tabla (mismo patrón que el resto). El total, el costo por unidad y el costo resultante se ven debajo, sin scroll.
 - `PATCH /products` sigue permitiendo cambiar el tipo de un producto usado en recetas. La producción lo detecta y bloquea (400); se podría impedir en Productos si molesta.
-- **Riesgo preexistente detectado (no corregido, fuera de alcance):** Pedidos (`POST /`, `PATCH /:id`, `PATCH /:id/status`) y Compras (`POST /`) también releen con `pool.query` antes de liberar el `client`. Con 10 o más requests concurrentes de escritura pueden colgar la API igual que Producción. La corrección es la misma: usar `client` en `getOrderById`/`getPurchaseById` dentro de la transacción. Además, Compras con varias filas de balance creadas a mitad de transacción podría tener el mismo patrón de *deadlock*. Recomendado como hallazgo prioritario para la próxima misión.
+- **Riesgo preexistente detectado (no corregido, fuera de alcance):** Pedidos (`POST /`, `PATCH /:id`, `PATCH /:id/status`) y Compras (`POST /`) también releen con `pool.query` antes de liberar el `client`. Con 10 o más requests concurrentes de escritura pueden colgar la API igual que Producción. La corrección es la misma: usar `client` en `getOrderById`/`getPurchaseById` dentro de la transacción. Además, Compras con varias filas de balance creadas a mitad de transacción podría tener el mismo patrón de *deadlock*. Recomendado como hallazgo prioritario para la próxima misión. **Cerrado en 6.3** (ver Misión 6.3: helper `withTransaction`, orden de bloqueo canónico y 3 corridas de estrés limpias).
 - Fuera de alcance (sin cambios): mermas (6.3, incluida la merma de producción real vs. teórica), lotes y vencimientos, subrecetas, conversiones de unidad, mano de obra/indirectos, producción automática por pedido, ecommerce público, mojibake, H7/H8/H9.
 
 ## Misión 6.1 - Stock real: movimientos inmutables, reserva y descuento por pedidos
