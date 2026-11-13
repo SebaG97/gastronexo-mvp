@@ -318,7 +318,7 @@ export const purchasesRoutes: FastifyPluginAsync = async (app) => {
         }
 
         if (!warehouseResult.rows[0].isActive) {
-          abortTransaction(400, { message: 'No se puede registrar una compra en un depÃ³sito inactivo.' })
+          abortTransaction(400, { message: 'No se puede registrar una compra en un depósito inactivo.' })
         }
 
         const productIds = [...new Set(input.items.map((item) => item.productId))]

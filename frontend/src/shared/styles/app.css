@@ -74,6 +74,74 @@
   font-weight: 600;
 }
 
+/* Mision 8.1: registro desde la pantalla de ingreso */
+.login-card__switch {
+  margin: 0;
+  color: var(--sys-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  color: var(--sys-primary);
+  background: none;
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.field__error {
+  color: var(--sys-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field__hint {
+  color: var(--sys-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--sys-danger);
+}
+
+.field__prefixed {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+  background: var(--sys-bg);
+}
+
+.field__prefixed > span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0 0 10px;
+  color: var(--sys-text-muted);
+  font-weight: 500;
+}
+
+.field__prefixed input {
+  min-width: 0;
+  padding-left: 2px;
+  border: 0;
+  background: transparent;
+}
+
+.field__prefixed:focus-within {
+  border-color: var(--sys-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
+}
+
+.field__prefixed input:focus {
+  box-shadow: none;
+}
+
 .shell {
   display: grid;
   min-height: 100vh;
@@ -156,7 +224,9 @@
 }
 
 .topbar__title {
+  margin: 0;
   font-size: 18px;
+  font-weight: 700;
 }
 
 .topbar__identity {
@@ -170,14 +240,9 @@
   gap: 8px;
 }
 
-.organization-switcher__label,
-.organization-switcher__name {
+.organization-switcher__label {
   color: var(--sys-text-muted);
   font-size: 12px;
-}
-
-.organization-switcher__name {
-  font-weight: 650;
 }
 
 .topbar__actions {
@@ -544,10 +609,14 @@
   letter-spacing: 0.01em;
 }
 
+/* H12 (mision 8.4): la celda sigue siendo table-cell (con display:flex el borde inferior
+   de la columna quedaba desalineado del resto de la fila); los botones van en linea. */
 .products-table__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  white-space: nowrap;
+}
+
+.products-table__actions > * + * {
+  margin-left: 8px;
 }
 
 .products-table__badges {
@@ -1306,7 +1375,18 @@
     flex-wrap: wrap;
   }
 
-  .products-table__actions,
+  .products-table__actions {
+    white-space: normal;
+  }
+
+  .products-table__actions > * {
+    margin: 2px 8px 2px 0;
+  }
+
+  .products-table__actions > * + * {
+    margin-left: 0;
+  }
+
   .products-pagination {
     flex-wrap: wrap;
     gap: 8px;
@@ -1614,4 +1694,170 @@
 
 .notify-email-form .field {
   width: 100%;
+}
+
+/* Mision 8.3: mermas */
+.waste-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.waste-form__product {
+  grid-column: span 2;
+}
+
+.waste-form__wide {
+  grid-column: 1 / -1;
+}
+
+.waste-form__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.waste-form__estimate {
+  margin: 0;
+  color: var(--sys-text-muted);
+  font-size: 13px;
+}
+
+.waste-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.waste-summary__card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--sys-border);
+  border-radius: var(--sys-radius);
+  background: var(--sys-surface);
+}
+
+.waste-summary__card > span {
+  color: var(--sys-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.waste-summary__card > strong {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.waste-summary__card small {
+  color: var(--sys-text-muted);
+}
+
+.waste-summary__reasons ul {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.waste-summary__reasons li {
+  display: grid;
+  grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.waste-summary__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sys-bg);
+  overflow: hidden;
+}
+
+.waste-summary__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sys-danger);
+}
+
+.waste-summary__value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.waste-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.waste-row--voided td {
+  color: var(--sys-text-muted);
+}
+
+.waste-row__notes {
+  display: block;
+  max-width: 260px;
+  color: var(--sys-text-muted);
+  font-size: 12px;
+}
+
+.waste-empty {
+  margin: 8px 0;
+  color: var(--sys-text-muted);
+}
+
+.waste-void {
+  display: grid;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.waste-void p {
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .waste-form,
+  .waste-summary,
+  .waste-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .waste-form__product {
+    grid-column: auto;
+  }
+
+  .waste-summary__reasons li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .waste-summary__bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Mision 8.4 (H9): foco visible con teclado en todos los controles, con el color de la marca. */
+:where(button, a, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--sys-primary);
+  outline-offset: 2px;
+}
+
+.nav__item:focus-visible {
+  outline-offset: -2px;
+}
+
+.select-input:focus-visible {
+  outline: none;
+  border-color: var(--sys-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
 }

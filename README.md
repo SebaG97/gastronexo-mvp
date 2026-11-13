@@ -1,73 +1,35 @@
 # Gastronexo MVP
 
-Base frontend y backend para una consola operativa de gestion gastronomica.
+Consola operativa para negocios gastronómicos y de alimentos, con tienda online propia.
 
-El MVP incluye productos, categorias, tipos de corte, inventario base, proveedores,
-compras y un motor administrativo de pedidos. Los pedidos son el dominio central
-que debera consumir el ecommerce publico futuro: precios, cortes, subtotales,
-total e historial de estados se resuelven en backend.
+Incluye productos con categorías y tipos de corte, proveedores y compras, stock por
+depósito con movimientos inmutables y reservas, producción con recetas, pedidos
+(desde la consola o la tienda pública, con un único motor de precios en el backend),
+ventas, y avisos de pedidos nuevos en la consola, por Telegram y por email.
 
-## Inicio rápido
+## Inicio rápido (local)
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## Build de producción
+Requisitos: **Node.js 22 LTS**, **npm** y **Docker Desktop** abierto.
 
 ```bash
-cd frontend
-npm run build
+npm run setup   # una vez: PostgreSQL en Docker, .env, dependencias y migraciones
+npm run dev     # API (http://localhost:3000) + consola (http://localhost:5173). Ctrl+C cierra todo
+npm run demo    # opcional, con dev corriendo: cuenta demo con tienda, productos, stock y un pedido
 ```
 
-La documentación de diseño y alcance está disponible en `docs/`.
+- `setup` se puede repetir: no pisa `.env` existentes ni duplica nada. Crea `backend/.env` con la base del `docker-compose.yml` y un `JWT_SECRET` aleatorio.
+- Cuenta demo: `demo@gastronexo.test` / `demo-gastronexo-123`. Tienda: `http://localhost:5173/tienda/mercado-demo`.
+- Para tu propio negocio, en la pantalla de ingreso elegí **Crear cuenta para tu negocio**.
+- Otros comandos desde la raíz: `npm run build` (backend y frontend) y `npm run db:migrate`.
 
-## Desarrollo local
+La documentación de diseño, alcance y de cada misión está en `docs/`.
 
-### Requisitos
+## Desarrollo local paso a paso (sin los scripts)
 
-- Node.js
-- npm
-- Docker Desktop
-
-### Preparar entorno
-
-1. Copiar variables de entorno del backend:
-
-	```bash
-	cp backend/.env.example backend/.env
-	```
-
-2. Copiar variables de entorno del frontend:
-
-	```bash
-	cp frontend/.env.example frontend/.env
-	```
-
-3. Levantar PostgreSQL local:
-
-	```bash
-	docker compose up -d
-	```
-
-4. Instalar dependencias del backend y ejecutar migraciones:
-
-	```bash
-	cd backend
-	npm install
-	npm run db:migrate
-	npm run dev
-	```
-
-5. En otra terminal, instalar dependencias del frontend y levantar Vite:
-
-	```bash
-	cd frontend
-	npm install
-	npm run dev
-	```
+1. `docker compose up -d` (PostgreSQL 16 en el puerto 5432).
+2. `cp backend/.env.example backend/.env` y `cp frontend/.env.example frontend/.env`. El `DATABASE_URL` del ejemplo ya coincide con Docker. Cambiá `JWT_SECRET`.
+3. `cd backend && npm install && npm run db:migrate && npm run dev`
+4. En otra terminal: `cd frontend && npm install && npm run dev`
 
 ### Despliegue en producción (Misión 7.5)
 

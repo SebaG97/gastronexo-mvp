@@ -19,6 +19,8 @@ import {
   getCurrentSession,
   getStoredToken,
   login,
+  register,
+  type AuthRegisterRequest,
   saveStoredToken,
   switchOrganization,
   type AuthSession,
@@ -50,6 +52,7 @@ const sectionsWithPrimaryAction: AppSection[] = [
   'orders',
   'purchases',
   'production',
+  'waste',
   'sales',
   'stock',
   'storefront',
@@ -72,6 +75,7 @@ export function App() {
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [productionCreateRequestId, setProductionCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
+  const [wasteCreateRequestId, setWasteCreateRequestId] = useState(0)
   const [openOrderRequest, setOpenOrderRequest] = useState<{ orderId: string; nonce: number } | null>(null)
   const orderAlerts = useStorefrontOrderAlerts(session?.token, session?.organization.id)
 
@@ -143,7 +147,11 @@ export function App() {
       ) : (
         <></>
       ),
-      waste: <WasteView />,
+      waste: session ? (
+        <WasteView token={session.token} canWrite={canWriteProducts} createRequestId={wasteCreateRequestId} />
+      ) : (
+        <></>
+      ),
       sales: session ? <SalesView token={session.token} /> : <></>,
       stock: session ? (
         <StockView
@@ -178,6 +186,7 @@ export function App() {
     purchaseCreateRequestId,
     session,
     stockAdjustRequestId,
+    wasteCreateRequestId,
   ])
 
   useEffect(() => {
@@ -246,6 +255,20 @@ export function App() {
     setAuthStatus('authenticated')
   }
 
+  async function handleRegister(input: AuthRegisterRequest) {
+    const response = await register(input)
+
+    setSession({
+      token: response.token,
+      user: response.user,
+      organization: response.organization,
+    })
+    setOrganizations([response.organization])
+    setOrganizationSwitchError(null)
+    setActiveSection('dashboard')
+    setAuthStatus('authenticated')
+  }
+
   async function handleSwitchOrganization(organizationId: string) {
     if (!session || organizationId === session.organization.id) {
       return
@@ -303,7 +326,7 @@ export function App() {
   }
 
   if (authStatus !== 'authenticated' || !session) {
-    return <LoginView onLogin={handleLogin} />
+    return <LoginView onLogin={handleLogin} onRegister={handleRegister} />
   }
 
   const metadata = sectionMetadata[activeSection]
@@ -360,6 +383,13 @@ export function App() {
     if (activeSection === 'production') {
       if (session.organization.capabilities.canWriteProducts) {
         setProductionCreateRequestId((current) => current + 1)
+      }
+      return
+    }
+
+    if (activeSection === 'waste') {
+      if (session.organization.capabilities.canWriteProducts) {
+        setWasteCreateRequestId((current) => current + 1)
       }
       return
     }

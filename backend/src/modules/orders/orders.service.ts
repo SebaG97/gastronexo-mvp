@@ -188,14 +188,14 @@ export async function prepareOrderItems(
 
     if (cutOptions.length > 0) {
       if (!requestedCutTypeId) {
-        return { ok: false as const, statusCode: 400, message: 'Selecciona un corte activo asociado al producto.' }
+        return { ok: false as const, statusCode: 400, message: 'Seleccioná un corte activo del producto.' }
       }
 
       selectedCutOption =
         cutOptions.find((option) => option.cutTypeId === requestedCutTypeId) ?? null
 
       if (!selectedCutOption) {
-        return { ok: false as const, statusCode: 400, message: 'El corte seleccionado no esta activo o no pertenece al producto.' }
+        return { ok: false as const, statusCode: 400, message: 'El corte seleccionado no está activo o no pertenece al producto.' }
       }
     } else if (requestedCutTypeId) {
       return { ok: false as const, statusCode: 400, message: 'El producto seleccionado no tiene opciones de corte activas.' }

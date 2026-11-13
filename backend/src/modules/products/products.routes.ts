@@ -44,7 +44,7 @@ const createProductSchema = z.object({
   imageUrl: imageUrlSchema.nullable().optional(),
 }).refine((input) => !input.isCatalogVisible || input.isSellable, {
   path: ['isCatalogVisible'],
-  message: 'Un producto visible en catalogo debe ser vendible.',
+  message: 'Un producto visible en el catálogo debe ser vendible.',
 })
 
 const updateProductSchema = z
@@ -107,6 +107,13 @@ function normalizeOptionalText(value: string | null | undefined) {
 
 function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
+}
+
+function productUniqueMessage(error: unknown) {
+  const constraint = typeof error === 'object' && error !== null && 'constraint' in error ? String(error.constraint) : ''
+  return constraint === 'products_org_name_ci_unique'
+    ? 'Ya existe un producto con ese nombre (puede estar inactivo). Usá otro nombre o reactivá el existente.'
+    : 'Ya existe un producto con ese SKU.'
 }
 
 async function categoryExistsAndIsActive(
@@ -385,7 +392,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(201).send({ product })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
+          return reply.code(409).send({ message: productUniqueMessage(error) })
         }
         throw error
       }
@@ -500,7 +507,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
             const nextIsCatalogVisible = input.isCatalogVisible ?? currentProduct.isCatalogVisible
 
             if (!nextIsSellable && nextIsCatalogVisible) {
-              abortTransaction(400, { message: 'Un producto visible en catalogo debe ser vendible.' })
+              abortTransaction(400, { message: 'Un producto visible en el catálogo debe ser vendible.' })
             }
           }
 
@@ -540,7 +547,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
+          return reply.code(409).send({ message: productUniqueMessage(error) })
         }
         throw error
       }
@@ -701,7 +708,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(201).send(created)
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ese corte ya esta asignado al producto.' })
+          return reply.code(409).send({ message: 'Ese corte ya está asignado al producto.' })
         }
         throw error
       }
@@ -758,7 +765,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
           const option = optionResult.rows[0]
 
           if (!option) {
-            abortTransaction(404, { message: 'Opcion de corte no encontrada.' })
+            abortTransaction(404, { message: 'Opción de corte no encontrada.' })
           }
 
           const nextIsActive = input.isActive ?? option.isActive
@@ -776,7 +783,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
             )
 
             if (!cutTypeResult.rows[0]) {
-              abortTransaction(400, { message: 'No se puede activar una opcion con tipo de corte inactivo.' })
+              abortTransaction(400, { message: 'No se puede activar una opción con un tipo de corte inactivo.' })
             }
           }
 
@@ -829,7 +836,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'El producto ya tiene una opcion de corte default activa.' })
+          return reply.code(409).send({ message: 'El producto ya tiene un corte por defecto activo.' })
         }
         throw error
       }

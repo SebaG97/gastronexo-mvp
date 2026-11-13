@@ -44,6 +44,12 @@ const checks = [
               WHEN 'order_delivery' THEN EXISTS (
                 SELECT 1 FROM orders o
                 WHERE o.id = im.source_id AND o.organization_id = im.organization_id AND o.status = 'delivered')
+              WHEN 'waste' THEN EXISTS (
+                SELECT 1 FROM waste_records wr
+                WHERE wr.id = im.source_id AND wr.organization_id = im.organization_id)
+              WHEN 'waste_void' THEN EXISTS (
+                SELECT 1 FROM waste_records wr
+                WHERE wr.id = im.source_id AND wr.organization_id = im.organization_id AND wr.status = 'voided')
               WHEN 'production_void' THEN EXISTS (
                 SELECT 1 FROM production_runs pr
                 WHERE pr.id = im.source_id AND pr.organization_id = im.organization_id AND pr.status = 'voided')
@@ -97,6 +103,27 @@ const checks = [
           WHERE ($1::uuid IS NULL OR organization_id = $1)
           GROUP BY organization_id, run_number
           HAVING COUNT(*) > 1`,
+  },
+  {
+    name: 'numeros MER- duplicados',
+    sql: `SELECT organization_id, waste_number, COUNT(*)::int AS repeated
+          FROM waste_records
+          WHERE ($1::uuid IS NULL OR organization_id = $1)
+          GROUP BY organization_id, waste_number
+          HAVING COUNT(*) > 1`,
+  },
+  {
+    name: 'merma vigente con su salida y anulada con su devolucion',
+    sql: `SELECT wr.organization_id, wr.waste_number, wr.status
+          FROM waste_records wr
+          WHERE ($1::uuid IS NULL OR wr.organization_id = $1)
+            AND (
+              NOT EXISTS (SELECT 1 FROM inventory_movements im
+                          WHERE im.source_type = 'waste' AND im.source_id = wr.id AND im.quantity_delta = -wr.quantity)
+              OR (wr.status = 'voided') <> EXISTS (
+                          SELECT 1 FROM inventory_movements im
+                          WHERE im.source_type = 'waste_void' AND im.source_id = wr.id AND im.quantity_delta = wr.quantity)
+            )`,
   },
   {
     name: 'secuencia PED- detras del ultimo numero emitido',

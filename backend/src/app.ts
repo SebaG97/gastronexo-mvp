@@ -21,6 +21,7 @@ import { cutTypesRoutes } from './modules/products/cut-types.routes.js'
 import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js'
+import { wasteRoutes } from './modules/waste/waste.routes.js'
 import { publicStorefrontRoutes } from './modules/storefront/public.routes.js'
 import { storefrontAdminRoutes } from './modules/storefront/storefront-admin.routes.js'
 
@@ -147,6 +148,7 @@ export function buildApp() {
   app.register(storefrontAdminRoutes, { prefix: '/api/storefront' })
   app.register(publicStorefrontRoutes, { prefix: '/api/public' })
   app.register(notificationsRoutes, { prefix: '/api/notifications' })
+  app.register(wasteRoutes, { prefix: '/api/waste' })
 
   return app
 }

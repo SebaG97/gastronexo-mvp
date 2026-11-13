@@ -1,6 +1,6 @@
 import type { DbClient } from '../../db/transaction.js'
 
-export type MovementType = 'purchase' | 'adjustment' | 'sale' | 'production'
+export type MovementType = 'purchase' | 'adjustment' | 'sale' | 'production' | 'waste'
 export type MovementSourceType =
   | 'purchase'
   | 'adjustment'
@@ -8,6 +8,8 @@ export type MovementSourceType =
   | 'production_consumption'
   | 'production_output'
   | 'production_void'
+  | 'waste'
+  | 'waste_void'
 
 export type StockRequirement = {
   productId: string
