@@ -91,4 +91,4 @@ Screenshots en `docs/visual-qa/8.7/`.
 
 ## Pendiente detectado (no es de esta misión)
 
-`npm audit` del backend marca vulnerabilidades en versiones de `fastify`, `fast-jwt` (vía `@fastify/jwt`), `fast-uri` y `zod`, que ya estaban antes de esta misión. Conviene una misión corta de actualización de dependencias antes de salir a producción.
+`npm audit` del backend marcaba vulnerabilidades previas en `fastify`, `fast-jwt`, `fast-uri` y `zod`. **Resuelto en la 8.10** (`docs/mision-8.10-dependencias.md`).

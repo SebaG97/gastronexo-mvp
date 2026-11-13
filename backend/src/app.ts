@@ -36,7 +36,11 @@ const SERVICE_UNAVAILABLE_BODY = {
 export function buildApp() {
   const app = Fastify({
     logger: true,
-    trustProxy: config.TRUST_PROXY,
+    // Fastify 5.12 ya no tipa un numero de saltos: se traduce a la funcion equivalente (mision 8.10).
+    trustProxy:
+      typeof config.TRUST_PROXY === 'number'
+        ? ((hops: number) => (_address: string, hop: number) => hop < hops)(config.TRUST_PROXY)
+        : config.TRUST_PROXY,
     // Ningun endpoint necesita mas: un pedido de 100 items ocupa unos pocos KB.
     bodyLimit: 256 * 1024,
   })
