@@ -1,6 +1,10 @@
 import 'dotenv/config'
 import { z } from 'zod'
 
+// Mision 8.14: mensajes de validacion por defecto en espanol (zod 4 trae el idioma). Este
+// modulo se importa antes que cualquier esquema, asi que aplica a toda la API.
+z.config(z.locales.es())
+
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),

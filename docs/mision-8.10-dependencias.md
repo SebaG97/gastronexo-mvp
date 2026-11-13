@@ -17,7 +17,7 @@
 
 **Único ajuste de código:** Fastify 5.12 ya no acepta un número en `trustProxy` (cantidad de proxies). `TRUST_PROXY=1` ahora se traduce a la función equivalente, en `app.ts`.
 
-**Cambio visible:** los mensajes de validación que vienen por defecto de zod cambiaron de redacción y siguen en inglés. Por ejemplo, "Too small: expected string to have >=2 characters". La consola valida antes de enviar, así que el usuario casi nunca los ve. Los mensajes propios en español no cambian.
+**Cambio visible:** los mensajes de validación que vienen por defecto de zod cambiaron de redacción y salían en inglés (**en español desde la 8.14**). Por ejemplo, "Too small: expected string to have >=2 characters". La consola valida antes de enviar, así que el usuario casi nunca los ve. Los mensajes propios en español no cambian.
 
 ## Frontend
 
