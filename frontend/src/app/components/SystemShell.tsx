@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import {
+  Bell,
+  BellOff,
   ChefHat,
   CookingPot,
   ClipboardList,
@@ -75,6 +77,9 @@ type SystemShellProps = {
   organizationSwitchError: string | null
   onSwitchOrganization: (organizationId: string) => void
   newStorefrontOrders?: number
+  orderAlertsEnabled?: boolean
+  orderAlertsBlocked?: boolean
+  onToggleOrderAlerts?: () => void
 }
 
 export function SystemShell({
@@ -97,7 +102,15 @@ export function SystemShell({
   organizationSwitchError,
   onSwitchOrganization,
   newStorefrontOrders = 0,
+  orderAlertsEnabled = true,
+  orderAlertsBlocked = false,
+  onToggleOrderAlerts,
 }: SystemShellProps) {
+  const orderAlertsLabel = orderAlertsEnabled
+    ? orderAlertsBlocked
+      ? 'Avisos de pedidos con sonido (notificaciones del navegador bloqueadas). Click para silenciar.'
+      : 'Avisos de pedidos nuevos activados. Click para silenciar.'
+    : 'Avisos de pedidos nuevos silenciados. Click para activar sonido y notificaciones.'
   const visibleNavigation = canManageMembers
     ? navigation
     : navigation.filter((item) => item.id !== 'members')
@@ -151,6 +164,18 @@ export function SystemShell({
             </div>
           </div>
           <div className="topbar__actions">
+            {onToggleOrderAlerts ? (
+              <button
+                aria-label={orderAlertsLabel}
+                aria-pressed={orderAlertsEnabled}
+                className={`icon-button${orderAlertsEnabled ? '' : ' icon-button--muted'}`}
+                onClick={onToggleOrderAlerts}
+                title={orderAlertsLabel}
+                type="button"
+              >
+                {orderAlertsEnabled ? <Bell size={17} /> : <BellOff size={17} />}
+              </button>
+            ) : null}
             <button
               aria-label={theme === 'light' ? 'Activar modo oscuro' : 'Activar modo claro'}
               className="icon-button"

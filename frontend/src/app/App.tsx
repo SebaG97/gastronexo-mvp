@@ -2,7 +2,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { DashboardView } from '../features/dashboard/DashboardView'
 import { CustomersView } from '../features/customers/CustomersView'
 import { MembersView } from '../features/organization/MembersView'
+import { OrderAlertToast } from '../features/orders/OrderAlertToast'
 import { OrdersView } from '../features/orders/OrdersView'
+import { useStorefrontOrderAlerts } from '../features/orders/useStorefrontOrderAlerts'
 import { CutTypesView } from '../features/products/CutTypesView'
 import { ProductsView } from '../features/products/ProductsView'
 import { PurchasesView } from '../features/purchases/PurchasesView'
@@ -13,7 +15,6 @@ import { WasteView } from '../features/waste/WasteView'
 import { StorefrontSettingsView } from '../features/storefront/StorefrontSettingsView'
 import {
   clearStoredToken,
-  getOrders,
   getUserOrganizations,
   getCurrentSession,
   getStoredToken,
@@ -41,9 +42,6 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   members: { title: 'Miembros', action: 'Gestionar accesos' },
   storefront: { title: 'Tienda online', action: 'Ir a pedidos' },
 }
-
-// Cada cuanto se consulta si entraron pedidos nuevos desde la tienda.
-const STOREFRONT_ORDERS_POLL_MS = 60_000
 
 const sectionsWithPrimaryAction: AppSection[] = [
   'products',
@@ -74,7 +72,8 @@ export function App() {
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [productionCreateRequestId, setProductionCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
-  const [newStorefrontOrders, setNewStorefrontOrders] = useState(0)
+  const [openOrderRequest, setOpenOrderRequest] = useState<{ orderId: string; nonce: number } | null>(null)
+  const orderAlerts = useStorefrontOrderAlerts(session?.token, session?.organization.id)
 
   const canManageMembers =
     session?.organization.role === 'owner' || session?.organization.role === 'admin'
@@ -120,6 +119,8 @@ export function App() {
           token={session.token}
           canWriteOrders={canWriteProducts}
           createRequestId={orderCreateRequestId}
+          refreshKey={orderAlerts.arrivalTick}
+          openOrderRequest={openOrderRequest}
         />
       ) : (
         <></>
@@ -170,37 +171,14 @@ export function App() {
     customerCreateRequestId,
     cutTypeCreateRequestId,
     orderCreateRequestId,
+    openOrderRequest,
+    orderAlerts.arrivalTick,
     productCreateRequestId,
     productionCreateRequestId,
     purchaseCreateRequestId,
     session,
     stockAdjustRequestId,
   ])
-
-  const sessionToken = session?.token
-  useEffect(() => {
-    if (!sessionToken) {
-      setNewStorefrontOrders(0)
-      return
-    }
-    let cancelled = false
-    const check = async () => {
-      try {
-        const response = await getOrders({ channel: 'storefront', status: 'new', page: 1, pageSize: 1 }, sessionToken)
-        if (!cancelled) {
-          setNewStorefrontOrders(response.pagination.total)
-        }
-      } catch {
-        // Sin conexion o sesion vencida: el contador queda como estaba.
-      }
-    }
-    void check()
-    const timer = window.setInterval(() => void check(), STOREFRONT_ORDERS_POLL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [sessionToken, activeSection])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -408,7 +386,10 @@ export function App() {
       isPrimaryActionDisabled={isPrimaryActionDisabled}
       primaryActionDisabledReason={primaryActionDisabledReason}
       isSwitchingOrganization={isSwitchingOrganization}
-      newStorefrontOrders={newStorefrontOrders}
+      newStorefrontOrders={orderAlerts.count}
+      orderAlertsEnabled={orderAlerts.enabled}
+      orderAlertsBlocked={orderAlerts.notificationState === 'denied'}
+      onToggleOrderAlerts={() => void orderAlerts.toggleEnabled()}
       onLogout={handleLogout}
       onNavigate={setActiveSection}
       onPrimaryAction={handlePrimaryAction}
@@ -424,6 +405,15 @@ export function App() {
     >
       {/* H18: re-montar al cambiar de organización descarta estado local (depósito, filtros) de la anterior. */}
       <Fragment key={session.organization.id}>{view}</Fragment>
+      <OrderAlertToast
+        alert={orderAlerts.alert}
+        onDismiss={orderAlerts.dismissAlert}
+        onOpen={(orderId) => {
+          setActiveSection('orders')
+          if (orderId) setOpenOrderRequest({ orderId, nonce: Date.now() })
+          orderAlerts.dismissAlert()
+        }}
+      />
     </SystemShell>
   )
 }

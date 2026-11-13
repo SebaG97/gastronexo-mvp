@@ -1445,3 +1445,101 @@
 .storefront-zone-form .field:nth-child(2) {
   flex: 0 1 160px;
 }
+
+/* Mision 7.3: aviso de pedido nuevo de la tienda */
+.icon-button--muted {
+  color: var(--sys-text-muted);
+  opacity: 0.7;
+}
+
+.order-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: min(380px, calc(100vw - 32px));
+  padding: 14px 14px 14px 16px;
+  border: 1px solid var(--sys-border);
+  border-left: 4px solid var(--sys-primary);
+  border-radius: var(--sys-radius, 8px);
+  color: var(--sys-text);
+  background: var(--sys-surface-raised, var(--sys-surface));
+  box-shadow: 0 12px 32px rgb(15 23 42 / 18%);
+  animation: order-toast-in 220ms ease-out;
+}
+
+.order-toast__icon {
+  display: inline-grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--sys-primary-text);
+  background: var(--sys-primary);
+}
+
+.order-toast__body {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.order-toast__title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.order-toast__detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sys-text-muted);
+  font-size: 13px;
+}
+
+.order-toast__action {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.order-toast__close {
+  display: inline-grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--sys-text-muted);
+  background: transparent;
+}
+
+.order-toast__close:hover {
+  color: var(--sys-text);
+  background: var(--sys-bg);
+}
+
+@keyframes order-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (max-width: 640px) {
+  .order-toast {
+    right: 16px;
+    bottom: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-toast {
+    animation: none;
+  }
+}

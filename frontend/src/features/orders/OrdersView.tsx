@@ -95,6 +95,10 @@ type OrdersViewProps = {
   token: string
   canWriteOrders: boolean
   createRequestId: number
+  /** Cambia cuando entran pedidos nuevos de la tienda: recarga la lista sin parpadeo. */
+  refreshKey?: number
+  /** Pedido a abrir desde el aviso de pedido nuevo. */
+  openOrderRequest?: { orderId: string; nonce: number } | null
 }
 
 type OrderFormItem = {
@@ -180,7 +184,7 @@ function buildMutationInput(
   }
 }
 
-export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersViewProps) {
+export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey = 0, openOrderRequest = null }: OrdersViewProps) {
   const [orders, setOrders] = useState<Order[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -244,8 +248,10 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
     }
   }, [canWriteOrders, createRequestId])
 
-  async function loadOrders() {
-    setIsLoadingOrders(true)
+  async function loadOrders({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) {
+      setIsLoadingOrders(true)
+    }
     setLoadError(null)
 
     try {
@@ -263,10 +269,14 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
       setTotal(response.pagination.total)
       setTotalPages(response.pagination.totalPages)
     } catch {
-      setLoadError('No se pudieron cargar los pedidos.')
-      setOrders([])
+      if (!silent) {
+        setLoadError('No se pudieron cargar los pedidos.')
+        setOrders([])
+      }
     } finally {
-      setIsLoadingOrders(false)
+      if (!silent) {
+        setIsLoadingOrders(false)
+      }
     }
   }
 
@@ -299,7 +309,25 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
 
   useEffect(() => {
     void loadOrders()
-  }, [debouncedSearchTerm, page, status, token])
+  }, [debouncedSearchTerm, page, status, channel, token])
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      void loadOrders({ silent: true })
+    }
+  }, [refreshKey])
+
+  useEffect(() => {
+    if (!openOrderRequest) {
+      return
+    }
+    // No cierra un formulario abierto (se perderia un pedido a medio cargar): lleva el detalle a la vista.
+    void handleSelectOrder(openOrderRequest.orderId).then(() => {
+      window.requestAnimationFrame(() => {
+        document.querySelector('.orders-panel--detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    })
+  }, [openOrderRequest])
 
   useEffect(() => {
     void loadOptions()
@@ -734,7 +762,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
 
       {selectedOrder ? (
         <Panel
-          className="orders-panel"
+          className="orders-panel orders-panel--detail"
           title={`Detalle ${selectedOrder.orderNumber}`}
           action={<StatusBadge tone={statusToneByKey[selectedOrder.status]}>{statusLabelByKey[selectedOrder.status]}</StatusBadge>}
         >
