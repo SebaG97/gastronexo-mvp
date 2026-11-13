@@ -20,6 +20,8 @@ import { suppliersRoutes } from './modules/purchases/suppliers.routes.js'
 import { cutTypesRoutes } from './modules/products/cut-types.routes.js'
 import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
+import { publicStorefrontRoutes } from './modules/storefront/public.routes.js'
+import { storefrontAdminRoutes } from './modules/storefront/storefront-admin.routes.js'
 
 const SERVICE_UNAVAILABLE_BODY = {
   message: 'El servicio está ocupado. Intentá de nuevo en unos segundos.',
@@ -30,7 +32,7 @@ export function buildApp() {
   const app = Fastify({ logger: true })
 
   app.register(cors, {
-    origin: config.FRONTEND_ORIGIN,
+    origin: config.STOREFRONT_ORIGIN ? [config.FRONTEND_ORIGIN, config.STOREFRONT_ORIGIN] : config.FRONTEND_ORIGIN,
     credentials: true,
   })
   app.register(jwt, { secret: config.JWT_SECRET })
@@ -61,6 +63,14 @@ export function buildApp() {
       error.statusCode === 400
     ) {
       return reply.code(400).send({ message: 'Solicitud inválida.' })
+    }
+
+    // Limite de peticiones de la tienda publica (@fastify/rate-limit).
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 429) {
+      return reply.code(429).send({
+        message: 'Demasiados intentos seguidos. Esperá un momento y volvé a intentar.',
+        code: 'rate_limited',
+      })
     }
 
     if (
@@ -110,6 +120,8 @@ export function buildApp() {
   app.register(salesRoutes, { prefix: '/api/sales' })
   app.register(recipesRoutes, { prefix: '/api/recipes' })
   app.register(productionRunsRoutes, { prefix: '/api/production-runs' })
+  app.register(storefrontAdminRoutes, { prefix: '/api/storefront' })
+  app.register(publicStorefrontRoutes, { prefix: '/api/public' })
 
   return app
 }

@@ -11,6 +11,8 @@ const environmentSchema = z.object({
     .trim()
     .regex(/^\d+(s|m|h|d)$/i, 'JWT_EXPIRES_IN debe usar formato como 15m, 8h o 7d.'),
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
+  // Origen de la tienda publica si se sirve desde otro dominio (opcional).
+  STOREFRONT_ORIGIN: z.string().url().optional(),
   // Pool de conexiones de la API.
   DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(50).max(60000).default(3000),

@@ -32,6 +32,8 @@ const createProductSchema = z.object({
   isSellable: z.boolean().default(false),
   isCatalogVisible: z.boolean().default(false),
   salePrice: z.coerce.number().min(0).nullable().optional(),
+  description: z.string().trim().max(1000).nullable().optional(),
+  imageUrl: z.string().trim().url().max(1000).nullable().optional(),
 }).refine((input) => !input.isCatalogVisible || input.isSellable, {
   path: ['isCatalogVisible'],
   message: 'Un producto visible en catalogo debe ser vendible.',
@@ -48,6 +50,8 @@ const updateProductSchema = z
     isSellable: z.boolean().optional(),
     isCatalogVisible: z.boolean().optional(),
     salePrice: z.coerce.number().min(0).nullable().optional(),
+    description: z.string().trim().max(1000).nullable().optional(),
+    imageUrl: z.string().trim().url().max(1000).nullable().optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar.',
@@ -87,6 +91,10 @@ function normalizeSku(sku: string | null | undefined) {
 
   const normalized = sku.trim()
   return normalized.length ? normalized : null
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  return normalizeSku(value)
 }
 
 function isUniqueViolation(error: unknown) {
@@ -218,6 +226,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.is_sellable AS "isSellable",
            p.is_catalog_visible AS "isCatalogVisible",
            p.sale_price AS "salePrice",
+           p.description,
+           p.image_url AS "imageUrl",
            p.category_id AS "categoryId",
            c.name AS "categoryName",
            p.is_active AS "isActive",
@@ -265,6 +275,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            p.is_sellable AS "isSellable",
            p.is_catalog_visible AS "isCatalogVisible",
            p.sale_price AS "salePrice",
+           p.description,
+           p.image_url AS "imageUrl",
            p.category_id AS "categoryId",
            c.name AS "categoryName",
            p.is_active AS "isActive",
@@ -318,9 +330,11 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
                category_id,
                is_sellable,
                is_catalog_visible,
-               sale_price
+               sale_price,
+               description,
+               image_url
              )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING
                id,
                name,
@@ -331,6 +345,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
                is_sellable AS "isSellable",
                is_catalog_visible AS "isCatalogVisible",
                sale_price AS "salePrice",
+               description,
+               image_url AS "imageUrl",
                category_id AS "categoryId",
                is_active AS "isActive",
                created_at AS "createdAt"`,
@@ -345,6 +361,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
               input.isSellable,
               input.isCatalogVisible,
               input.salePrice ?? null,
+              normalizeOptionalText(input.description),
+              normalizeOptionalText(input.imageUrl),
             ],
           )
 
@@ -422,6 +440,16 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         assignments.push(`sale_price = $${values.length}`)
       }
 
+      if (input.description !== undefined) {
+        values.push(normalizeOptionalText(input.description))
+        assignments.push(`description = $${values.length}`)
+      }
+
+      if (input.imageUrl !== undefined) {
+        values.push(normalizeOptionalText(input.imageUrl))
+        assignments.push(`image_url = $${values.length}`)
+      }
+
       assignments.push('updated_at = NOW()')
 
       try {
@@ -483,6 +511,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
                is_sellable AS "isSellable",
                is_catalog_visible AS "isCatalogVisible",
                sale_price AS "salePrice",
+               description,
+               image_url AS "imageUrl",
                category_id AS "categoryId",
                is_active AS "isActive",
                created_at AS "createdAt"`,
@@ -533,6 +563,8 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
            is_sellable AS "isSellable",
            is_catalog_visible AS "isCatalogVisible",
            sale_price AS "salePrice",
+           description,
+           image_url AS "imageUrl",
            category_id AS "categoryId",
            is_active AS "isActive",
            created_at AS "createdAt"`,
