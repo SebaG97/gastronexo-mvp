@@ -1,4 +1,6 @@
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+// En produccion, sin VITE_API_URL, la API se sirve en el mismo origen (/api), como en
+// DigitalOcean App Platform (mision 7.5).
+const apiBaseUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:3000')
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card_on_delivery'
 export type FulfillmentType = 'pickup' | 'delivery'

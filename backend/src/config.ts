@@ -5,6 +5,11 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),
+  // CA de la base administrada (PEM). En App Platform: ${db.CA_CERT}. Con esto se verifica el TLS.
+  DATABASE_CA_CERT: z.string().trim().min(20).optional(),
+  // Header con la IP real del cliente puesto por el proxy de entrada (App Platform: do-connecting-ip).
+  // Solo detras de un proxy que lo sobrescriba: si no, el cliente podria falsificarlo.
+  CLIENT_IP_HEADER: z.string().trim().toLowerCase().regex(/^[a-z0-9-]+$/).optional(),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z
     .string()
@@ -68,4 +73,6 @@ export const config = environmentSchema
       })
     }
   })
-  .parse(process.env)
+  // Una variable vacia cuenta como no definida: en App Platform es comun dejar un SECRET o un
+  // opcional sin valor, y no debe impedir que la API arranque (mision 7.5).
+  .parse(Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined && value.trim() !== '')))

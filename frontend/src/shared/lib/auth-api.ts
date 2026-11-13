@@ -1,6 +1,8 @@
 export const AUTH_TOKEN_STORAGE_KEY = 'gastronexo:auth:token'
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+// En produccion, sin VITE_API_URL, la API se sirve en el mismo origen (/api), como en
+// DigitalOcean App Platform (mision 7.5).
+const apiBaseUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:3000')
 
 type MembershipRole = 'owner' | 'admin' | 'operator' | 'viewer'
 

@@ -11,6 +11,7 @@ import {
   replaceOrderItems,
 } from '../orders/orders.service.js'
 import { enqueueOrderNotifications } from '../notifications/notifications.service.js'
+import { getClientIp } from '../../security/client-ip.js'
 import {
   availabilityFrom,
   availableStockSql,
@@ -158,6 +159,7 @@ async function getPublicOrder(client: DbClient, store: StoreRow, token: string) 
 export const publicStorefrontRoutes: FastifyPluginAsync = async (app) => {
   await app.register(rateLimit, {
     global: false,
+    keyGenerator: getClientIp,
     errorResponseBuilder: (_request, context) => ({
       statusCode: context.statusCode,
       message: 'Demasiados intentos seguidos. Esperá un momento y volvé a intentar.',

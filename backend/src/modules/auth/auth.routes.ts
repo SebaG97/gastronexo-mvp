@@ -7,6 +7,7 @@ import { getDatabaseErrorCode } from '../../db/errors.js'
 import { pool } from '../../db/pool.js'
 import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { getOrganizationAccess, getRoleCapabilities } from '../../security/authorization.js'
+import { getClientIp } from '../../security/client-ip.js'
 import type { MembershipRole } from './auth.types.js'
 
 const registerSchema = z.object({
@@ -97,7 +98,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Limites de intentos (mision 7.1). Contadores en memoria: con varias instancias de la API
   // hay que pasarlos a un store compartido (Redis).
   // El 429 lo arma el manejador de errores global (code: 'rate_limited').
-  await app.register(rateLimit, { global: false })
+  await app.register(rateLimit, { global: false, keyGenerator: getClientIp })
 
   app.get('/organizations', async (request, reply) => {
     const isValidSession = await verifySession(request, reply)
@@ -276,7 +277,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           hook: 'preHandler',
           max: config.AUTH_LOGIN_MAX_ATTEMPTS,
           timeWindow: config.AUTH_LOGIN_WINDOW_MINUTES * 60_000,
-          keyGenerator: (request: FastifyRequest) => `${request.ip}|${normalizedEmailFromBody(request.body)}`,
+          keyGenerator: (request: FastifyRequest) => `${getClientIp(request)}|${normalizedEmailFromBody(request.body)}`,
         },
       },
     },

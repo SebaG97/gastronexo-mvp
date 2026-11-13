@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
+import { getClientIp } from '../../security/client-ip.js'
 import { ChannelError, getTelegramBotUsername, isEmailAvailable, isTelegramAvailable } from './channels.js'
 import {
   createTelegramLinkCode,
@@ -73,7 +74,7 @@ async function notificationsResponse(organizationId: string) {
 }
 
 export const notificationsRoutes: FastifyPluginAsync = async (app) => {
-  await app.register(rateLimit, { global: false })
+  await app.register(rateLimit, { global: false, keyGenerator: getClientIp })
   const readRoles = requireOrganizationRole('owner', 'admin', 'operator', 'viewer')
   const writeRoles = requireOrganizationRole('owner', 'admin')
 
