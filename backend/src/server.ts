@@ -1,12 +1,14 @@
 import { buildApp } from './app.js'
 import { config } from './config.js'
 import { pool, readinessPool } from './db/pool.js'
+import { startNotificationWorker } from './modules/notifications/notification-worker.js'
 
 const app = buildApp()
 const shutdownSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
 
 let shutdownInProgress = false
 let shutdownHandlersRegistered = false
+let stopNotificationWorker: (() => Promise<void>) | undefined
 
 function extractErrorCode(error: unknown) {
   if (typeof error === 'object' && error !== null && 'code' in error) {
@@ -45,6 +47,13 @@ async function shutdown(signal: NodeJS.Signals | 'startup_failure') {
 
   shutdownInProgress = true
   app.log.info({ signal }, 'Iniciando apagado ordenado de la API.')
+
+  try {
+    // Primero el despachador: termina el envio en curso antes de cerrar el pool.
+    await stopNotificationWorker?.()
+  } catch (error) {
+    app.log.error({ code: extractErrorCode(error) }, 'Error al detener el despachador de avisos.')
+  }
 
   try {
     await app.close()
@@ -87,6 +96,10 @@ async function start() {
     }
 
     await app.listen({ port: config.PORT, host: '0.0.0.0' })
+
+    if (config.NOTIFICATIONS_WORKER_ENABLED) {
+      stopNotificationWorker = startNotificationWorker(app.log)
+    }
   } catch (error) {
     app.log.error({ code: extractErrorCode(error) }, 'La API no pudo iniciar correctamente.')
     await shutdown('startup_failure')

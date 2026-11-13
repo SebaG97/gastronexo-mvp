@@ -27,6 +27,19 @@ const environmentSchema = z.object({
       if (/^\d+$/.test(value)) return Number(value)
       return value
     }),
+  // Avisos de pedidos nuevos (mision 7.4). Cada canal se activa si tiene sus credenciales.
+  TELEGRAM_BOT_TOKEN: z.string().trim().min(20).optional(),
+  TELEGRAM_API_BASE: z.string().url().default('https://api.telegram.org'),
+  RESEND_API_KEY: z.string().trim().min(10).optional(),
+  EMAIL_FROM: z.string().trim().min(3).optional(),
+  EMAIL_API_BASE: z.string().url().default('https://api.resend.com'),
+  // URL publica de la consola, para el link "Abrir en Gastronexo" de los avisos (opcional).
+  PUBLIC_APP_URL: z.string().url().optional(),
+  // Apagar el despachador (por ejemplo en un proceso que solo corre migraciones).
+  NOTIFICATIONS_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
   // Origen de la tienda publica si se sirve desde otro dominio (opcional).
   STOREFRONT_ORIGIN: z.string().url().optional(),
   // Pool de conexiones de la API.

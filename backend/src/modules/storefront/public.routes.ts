@@ -10,6 +10,7 @@ import {
   prepareOrderItems,
   replaceOrderItems,
 } from '../orders/orders.service.js'
+import { enqueueOrderNotifications } from '../notifications/notifications.service.js'
 import {
   availabilityFrom,
   availableStockSql,
@@ -472,6 +473,9 @@ export const publicStorefrontRoutes: FastifyPluginAsync = async (app) => {
              VALUES ($1, NULL, 'new', NULL)`,
             [orderId],
           )
+
+          // Aviso al comercio (mision 7.4): en la misma transaccion, asi no se pierde.
+          await enqueueOrderNotifications(client, store.organizationId, orderId)
 
           return { orderNumber, publicToken }
         })
