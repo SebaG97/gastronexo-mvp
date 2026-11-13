@@ -29,13 +29,32 @@ const SERVICE_UNAVAILABLE_BODY = {
 }
 
 export function buildApp() {
-  const app = Fastify({ logger: true })
+  const app = Fastify({
+    logger: true,
+    trustProxy: config.TRUST_PROXY,
+    // Ningun endpoint necesita mas: un pedido de 100 items ocupa unos pocos KB.
+    bodyLimit: 256 * 1024,
+  })
+
+  // Headers de seguridad para todas las respuestas de la API (mision 7.1). La API solo
+  // devuelve JSON: no carga recursos ni se muestra dentro de un frame.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('X-Frame-Options', 'DENY')
+    reply.header('Referrer-Policy', 'no-referrer')
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+    reply.header('Cross-Origin-Opener-Policy', 'same-origin')
+    if (config.NODE_ENV === 'production') {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    }
+    return payload
+  })
 
   app.register(cors, {
     origin: config.STOREFRONT_ORIGIN ? [config.FRONTEND_ORIGIN, config.STOREFRONT_ORIGIN] : config.FRONTEND_ORIGIN,
     credentials: true,
   })
-  app.register(jwt, { secret: config.JWT_SECRET })
+  app.register(jwt, { secret: config.JWT_SECRET, verify: { algorithms: ['HS256'] } })
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof TransactionAbort) {
@@ -53,6 +72,10 @@ export function buildApp() {
         message: 'Datos de entrada inválidos.',
         issues: error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
       })
+    }
+
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 413) {
+      return reply.code(413).send({ message: 'La solicitud es demasiado grande.' })
     }
 
     if (

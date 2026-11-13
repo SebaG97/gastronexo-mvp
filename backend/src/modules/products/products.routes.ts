@@ -22,6 +22,14 @@ const productIdParamsSchema = z.object({
   id: z.string().uuid(),
 })
 
+// Solo http(s): z.string().url() acepta tambien javascript:, data: y file: (mision 7.1).
+const imageUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .max(1000)
+  .refine((value) => /^https?:\/\//i.test(value), { message: 'La imagen debe ser una URL http o https.' })
+
 const createProductSchema = z.object({
   name: z.string().trim().min(2).max(160),
   sku: z.string().trim().min(1).max(80).optional(),
@@ -33,7 +41,7 @@ const createProductSchema = z.object({
   isCatalogVisible: z.boolean().default(false),
   salePrice: z.coerce.number().min(0).nullable().optional(),
   description: z.string().trim().max(1000).nullable().optional(),
-  imageUrl: z.string().trim().url().max(1000).nullable().optional(),
+  imageUrl: imageUrlSchema.nullable().optional(),
 }).refine((input) => !input.isCatalogVisible || input.isSellable, {
   path: ['isCatalogVisible'],
   message: 'Un producto visible en catalogo debe ser vendible.',
@@ -51,7 +59,7 @@ const updateProductSchema = z
     isCatalogVisible: z.boolean().optional(),
     salePrice: z.coerce.number().min(0).nullable().optional(),
     description: z.string().trim().max(1000).nullable().optional(),
-    imageUrl: z.string().trim().url().max(1000).nullable().optional(),
+    imageUrl: imageUrlSchema.nullable().optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar.',

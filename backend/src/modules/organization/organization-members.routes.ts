@@ -110,6 +110,26 @@ function getAssignableRolesForMember(
   return assignableRoles
 }
 
+// Serializa los cambios de miembros de una organizacion (O1, mision 7.1): dos owners que se
+// degradan o eliminan en paralelo ya no pueden dejarla sin owner. Bloquea la cabecera
+// (organizations) primero, como el resto del orden canonico de 6.3, y relee el rol del actor
+// dentro de la transaccion por si cambio desde el preHandler.
+async function lockMembershipChanges(client: DbClient, organizationId: string, actorId: string) {
+  await client.query('SELECT 1 FROM organizations WHERE id = $1 FOR NO KEY UPDATE', [organizationId])
+  const actorResult = await client.query<{ role: MembershipRole }>(
+    `SELECT role
+     FROM memberships
+     WHERE user_id = $1
+       AND organization_id = $2`,
+    [actorId, organizationId],
+  )
+  const actorRole = actorResult.rows[0]?.role
+  if (actorRole !== 'owner' && actorRole !== 'admin') {
+    abortTransaction(403, { message: FORBIDDEN_MESSAGE })
+  }
+  return actorRole
+}
+
 async function countOwnersInOrganization(client: DbClient, organizationId: string) {
   const ownerCountResult = await client.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
@@ -225,9 +245,10 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
       const params = updateMemberParamsSchema.parse(request.params)
       const input = updateMemberSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
-      const actorRole = request.organizationAccess!.role
+      const actorId = request.organizationAccess!.user.id
 
       return withTransaction(async (client) => {
+        const actorRole = await lockMembershipChanges(client, organizationId, actorId)
         const targetMembershipResult = await client.query<{ role: MembershipRole }>(
           `SELECT role
            FROM memberships
@@ -281,9 +302,9 @@ export const organizationMembersRoutes: FastifyPluginAsync = async (app) => {
       const params = updateMemberParamsSchema.parse(request.params)
       const organizationId = request.organizationAccess!.organization.id
       const actorId = request.organizationAccess!.user.id
-      const actorRole = request.organizationAccess!.role
 
       await withTransaction(async (client) => {
+        const actorRole = await lockMembershipChanges(client, organizationId, actorId)
         const targetMembershipResult = await client.query<{ role: MembershipRole }>(
           `SELECT role
            FROM memberships

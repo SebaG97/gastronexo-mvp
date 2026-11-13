@@ -11,6 +11,22 @@ const environmentSchema = z.object({
     .trim()
     .regex(/^\d+(s|m|h|d)$/i, 'JWT_EXPIRES_IN debe usar formato como 15m, 8h o 7d.'),
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
+  // Limites de intentos de autenticacion (mision 7.1).
+  AUTH_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(1000).default(10),
+  AUTH_LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+  AUTH_REGISTER_MAX_PER_HOUR: z.coerce.number().int().min(1).max(10000).default(5),
+  // Detras de un proxy/balanceador: true, un numero de saltos o una lista de IPs/CIDR.
+  // Sin esto, el limite de intentos ve la IP del proxy y no la del cliente.
+  TRUST_PROXY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => {
+      if (!value || value === 'false') return false
+      if (value === 'true') return true
+      if (/^\d+$/.test(value)) return Number(value)
+      return value
+    }),
   // Origen de la tienda publica si se sirve desde otro dominio (opcional).
   STOREFRONT_ORIGIN: z.string().url().optional(),
   // Pool de conexiones de la API.
@@ -25,4 +41,18 @@ const environmentSchema = z.object({
   DB_READY_TIMEOUT_MS: z.coerce.number().int().min(100).max(10000).default(1000),
 })
 
-export const config = environmentSchema.parse(process.env)
+export const config = environmentSchema
+  .superRefine((environment, context) => {
+    // En produccion no se arranca con el secreto de ejemplo ni con uno trivial (mision 7.1).
+    const secret = environment.JWT_SECRET
+    const isPlaceholder = /replace-with|change-?me|example/i.test(secret)
+    const distinctCharacters = new Set(secret).size
+    if (environment.NODE_ENV === 'production' && (isPlaceholder || distinctCharacters < 10)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['JWT_SECRET'],
+        message: 'JWT_SECRET de produccion debe ser aleatorio (por ejemplo: openssl rand -base64 48).',
+      })
+    }
+  })
+  .parse(process.env)
