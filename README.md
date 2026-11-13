@@ -19,6 +19,7 @@ npm run demo    # opcional, con dev corriendo: cuenta demo con tienda, productos
 
 - `setup` se puede repetir: no pisa `.env` existentes ni duplica nada. Crea `backend/.env` con la base del `docker-compose.yml` y un `JWT_SECRET` aleatorio.
 - Cuenta demo: `demo@gastronexo.test` / `demo-gastronexo-123`. Tienda: `http://localhost:5173/tienda/mercado-demo`.
+- `npm run vista-previa` (con dev corriendo y la carpeta `material-cliente/`): tienda de vista previa del cliente con sus fotos y su logo, con precios de ejemplo. Ver `docs/mision-8.9-vista-previa-cliente.md`.
 - Para tu propio negocio, en la pantalla de ingreso elegí **Crear cuenta para tu negocio**.
 - Otros comandos desde la raíz: `npm run build` (backend y frontend) y `npm run db:migrate`.
 
