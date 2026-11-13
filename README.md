@@ -91,6 +91,7 @@ Backend (`backend/.env`):
 - `JWT_EXPIRES_IN` (ejemplo: `8h`)
 - `FRONTEND_ORIGIN`
 - `STOREFRONT_ORIGIN` (opcional: solo si la tienda se sirve desde otro dominio)
+- Opcionales, avisos de pedidos (Misión 7.4): `TELEGRAM_BOT_TOKEN`, `RESEND_API_KEY` + `EMAIL_FROM`, `PUBLIC_APP_URL`. Cómo crear el bot y configurar el email: [`docs/mision-7.4-avisos-telegram-email.md`](docs/mision-7.4-avisos-telegram-email.md).
 - Opcionales, seguridad (Misión 7.1): `AUTH_LOGIN_MAX_ATTEMPTS`, `AUTH_LOGIN_WINDOW_MINUTES`, `AUTH_REGISTER_MAX_PER_HOUR` y `TRUST_PROXY` (obligatorio detrás de un proxy para que los límites vean la IP real). En `NODE_ENV=production` la API no arranca con un `JWT_SECRET` de ejemplo.
 - Opcionales, pool y protecciones de PostgreSQL (defaults en `backend/.env.example`): `DB_POOL_MAX`, `DB_POOL_CONNECTION_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, `DB_READY_TIMEOUT_MS`
 
