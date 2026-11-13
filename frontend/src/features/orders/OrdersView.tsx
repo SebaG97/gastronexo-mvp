@@ -67,7 +67,7 @@ const paymentLabelByKey: Record<StorefrontPaymentMethod, string> = {
 const statusLabelByKey: Record<OrderStatus, string> = {
   new: 'Nuevo',
   confirmed: 'Confirmado',
-  preparing: 'En preparacion',
+  preparing: 'En preparación',
   ready: 'Listo',
   delivered: 'Entregado',
   cancelled: 'Cancelado',
@@ -85,7 +85,7 @@ const statusToneByKey: Record<OrderStatus, 'success' | 'warning' | 'danger'> = {
 const transitionActionByStatus: Record<OrderStatus, string> = {
   new: 'Volver a nuevo',
   confirmed: 'Confirmar',
-  preparing: 'Iniciar preparacion',
+  preparing: 'Iniciar preparación',
   ready: 'Marcar listo',
   delivered: 'Entregar',
   cancelled: 'Cancelar',
@@ -458,11 +458,11 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
   async function handleSubmitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!customerId) {
-      setErrorMessage('Selecciona un cliente activo.')
+      setErrorMessage('Seleccioná un cliente activo.')
       return
     }
     if (items.length === 0) {
-      setErrorMessage('Agrega al menos un producto al pedido.')
+      setErrorMessage('Agregá al menos un producto al pedido.')
       return
     }
     if (items.some((item) => !item.productId || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
@@ -516,7 +516,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
 
     const warehouseId = needsDispatchWarehouse && nextStatus !== 'cancelled' ? dispatchWarehouseId : undefined
     if (needsDispatchWarehouse && nextStatus !== 'cancelled' && !warehouseId) {
-      setErrorMessage('Selecciona el deposito desde el que se va a despachar el pedido.')
+      setErrorMessage('Seleccioná el depósito desde el que se va a despachar el pedido.')
       return
     }
 
@@ -531,9 +531,9 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
       setAvailableTransitions(response.transitions)
       setSuccessMessage(
         warehouseId
-          ? `Estado actualizado. Stock reservado en ${response.order.warehouseName ?? 'el deposito'}.`
+          ? `Estado actualizado. Stock reservado en ${response.order.warehouseName ?? 'el depósito'}.`
           : nextStatus === 'delivered'
-            ? 'Pedido entregado. Stock descontado del deposito.'
+            ? 'Pedido entregado. Stock descontado del depósito.'
             : 'Estado del pedido actualizado.',
       )
       await loadOrders()
@@ -554,7 +554,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
       <div className="page-header">
         <div>
           <h1>Pedidos</h1>
-          <p>Gestiona pedidos administrativos con precios y cortes congelados.</p>
+          <p>Gestioná los pedidos de la consola y de la tienda online.</p>
         </div>
       </div>
 
@@ -584,9 +584,9 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
                 <div className="order-form__section-header"><strong>Alta rapida de cliente</strong></div>
                 <div className="customer-inline-form">
                   <label className="field">Nombre<input value={customerForm.name} maxLength={160} onChange={(event) => setCustomerForm((current) => ({ ...current, name: event.target.value }))} /></label>
-                  <label className="field">Razon social<input value={customerForm.businessName} maxLength={160} onChange={(event) => setCustomerForm((current) => ({ ...current, businessName: event.target.value }))} /></label>
+                  <label className="field">Razón social<input value={customerForm.businessName} maxLength={160} onChange={(event) => setCustomerForm((current) => ({ ...current, businessName: event.target.value }))} /></label>
                   <label className="field">Documento<input value={customerForm.documentNumber} maxLength={80} onChange={(event) => setCustomerForm((current) => ({ ...current, documentNumber: event.target.value }))} /></label>
-                  <label className="field">Telefono<input value={customerForm.phone} maxLength={80} onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+                  <label className="field">Teléfono<input value={customerForm.phone} maxLength={80} onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))} /></label>
                   <label className="field">Email<input type="email" value={customerForm.email} maxLength={160} onChange={(event) => setCustomerForm((current) => ({ ...current, email: event.target.value }))} /></label>
                   <label className="field">Notas<input value={customerForm.notes} maxLength={600} onChange={(event) => setCustomerForm((current) => ({ ...current, notes: event.target.value }))} /></label>
                   <div className="products-form__actions">
@@ -605,7 +605,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
 
             <section className="order-form__items">
               <div className="order-form__section-header">
-                <strong>Items</strong>
+                <strong>Ítems</strong>
                 <Button type="button" variant="secondary" onClick={() => void addItem()} disabled={sellableProducts.length === 0}>Agregar producto</Button>
               </div>
               {items.length === 0 ? <p>No hay productos vendibles activos para agregar.</p> : null}
@@ -679,7 +679,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
       <Panel className="orders-panel" title="Listado de pedidos" action={loadError ? undefined : <span>Total: {total}</span>}>
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
-            Buscar por numero o cliente
+            Buscar por número o cliente
             <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="PED-000001 o cliente" />
           </label>
           <label className="field products-toolbar__field products-toolbar__field--compact">
@@ -709,14 +709,14 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
             <table className="products-table">
               <thead>
                 <tr>
-                  <th>Numero</th>
+                  <th>Número</th>
                   <th>Canal</th>
                   <th>Cliente</th>
                   <th>Fecha</th>
                   <th>Entrega</th>
-                  <th>Items</th>
+                  <th>Ítems</th>
                   <th>Total</th>
-                  <th>Deposito</th>
+                  <th>Depósito</th>
                   <th>Estado</th>
                   <th>Acciones</th>
                 </tr>
@@ -751,7 +751,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
 
         {loadError ? null : (
           <div className="products-pagination">
-            <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
+            <span>Página {page} de {Math.max(totalPages, 1)}</span>
             <div className="products-pagination__actions">
               <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
               <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>
@@ -771,7 +771,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
             <span>Fecha: <strong>{new Date(selectedOrder.orderDate).toLocaleDateString('es-PY')}</strong></span>
             <span>Entrega: <strong>{selectedOrder.requestedDeliveryDate ? new Date(selectedOrder.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</strong></span>
             <span>Total: <strong>{formatMoney(selectedOrder.total)}</strong></span>
-            <span>Deposito: <strong>{selectedOrder.warehouseName ?? 'Sin asignar'}</strong></span>
+            <span>Depósito: <strong>{selectedOrder.warehouseName ?? 'Sin asignar'}</strong></span>
             {selectedOrder.deliveredAt ? (
               <span>Entregado: <strong>{new Date(selectedOrder.deliveredAt).toLocaleString('es-PY')}</strong></span>
             ) : null}
@@ -831,7 +831,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
           <div className="order-actions">
             {canWriteOrders && needsDispatchWarehouse ? (
               <label className="field order-warehouse-picker">
-                Deposito de despacho
+                Depósito de despacho
                 <select
                   className="select-input"
                   value={dispatchWarehouseId}
@@ -841,7 +841,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId, refreshKey 
                   }}
                   disabled={pendingStatus !== null || warehouses.length === 0}
                 >
-                  {warehouses.length === 0 ? <option value="">Sin depositos activos</option> : null}
+                  {warehouses.length === 0 ? <option value="">Sin depósitos activos</option> : null}
                   {warehouses.map((warehouse) => (
                     <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
                   ))}

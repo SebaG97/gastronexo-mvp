@@ -191,7 +191,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
       <div className="page-header">
         <div>
           <h1>Clientes</h1>
-          <p>Gestiona clientes basicos para pedidos administrativos.</p>
+          <p>Gestioná los clientes para tus pedidos.</p>
         </div>
       </div>
 
@@ -234,7 +234,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
         <div className="products-toolbar">
           <label className="field products-toolbar__field">
             Buscar cliente
-            <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Nombre, razon social o documento" />
+            <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Nombre, razón social o documento" />
           </label>
           <label className="field products-toolbar__field products-toolbar__field--compact">
             Estado
@@ -256,7 +256,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
               <thead>
                 <tr>
                   <th>Nombre</th>
-                  <th>Razon social</th>
+                  <th>Razón social</th>
                   <th>Documento</th>
                   <th>Contacto</th>
                   <th>Estado</th>
@@ -290,7 +290,7 @@ export function CustomersView({ token, canWriteCustomers, createRequestId }: Cus
 
         {loadError ? null : (
           <div className="products-pagination">
-            <span>Pagina {page} de {Math.max(totalPages, 1)}</span>
+            <span>Página {page} de {Math.max(totalPages, 1)}</span>
             <div className="products-pagination__actions">
               <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Anterior</Button>
               <Button type="button" variant="secondary" disabled={totalPages === 0 || page >= totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</Button>

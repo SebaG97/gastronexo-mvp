@@ -397,7 +397,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         }
 
         if (!allowedTransitions[currentOrder.status].includes(input.status)) {
-          abortTransaction(400, { message: 'Transicion de estado invalida para este pedido.' })
+          abortTransaction(400, { message: 'Transición de estado inválida para este pedido.' })
         }
 
         let warehouseId = currentOrder.warehouseId
@@ -422,7 +422,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             // Confirmacion (o pedido previo a 6.1 sin deposito): se elige deposito y se reserva.
             if (!input.warehouseId) {
               abortTransaction(400, {
-                message: 'Selecciona el deposito desde el que se va a despachar el pedido.',
+                message: 'Seleccioná el depósito desde el que se va a despachar el pedido.',
                 code: 'warehouse_required',
               })
             }
@@ -449,7 +449,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             warehouseId = input.warehouseId
           } else if (input.warehouseId && input.warehouseId !== warehouseId) {
             abortTransaction(400, {
-              message: 'El pedido ya tiene stock reservado en otro deposito. Cancelalo para cambiar de deposito.',
+              message: 'El pedido ya tiene stock reservado en otro depósito. Cancelalo para cambiar de depósito.',
             })
           }
 
@@ -470,7 +470,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             })
             if (!consumption.ok) {
               abortTransaction(409, {
-                message: 'La reserva de stock del pedido no coincide con el inventario. Revisa el stock del deposito.',
+                message: 'La reserva de stock del pedido no coincide con el inventario. Revisá el stock del depósito.',
                 code: 'reservation_mismatch',
               })
             }

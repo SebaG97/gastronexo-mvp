@@ -126,6 +126,7 @@ export function SystemShell({
           {visibleNavigation.map(({ id, label, icon: Icon }) => (
             <button
               className={`nav__item ${activeSection === id ? 'nav__item--active' : ''}`}
+              aria-current={activeSection === id ? 'page' : undefined}
               key={id}
               onClick={() => onNavigate(id)}
               type="button"
@@ -145,10 +146,16 @@ export function SystemShell({
       <div className="main-content">
         <header className="topbar">
           <div className="topbar__identity">
-            <h1 className="topbar__title">{title}</h1>
+            {/* H10: el h1 de cada pantalla esta en la pagina; aca es solo el titulo de la barra. */}
+            <p className="topbar__title" aria-hidden="true">
+              {title}
+            </p>
             <div className="organization-switcher">
-              <span className="organization-switcher__label">Organización activa</span>
+              <label className="organization-switcher__label" htmlFor="organization-switcher">
+                Organización activa
+              </label>
               <select
+                id="organization-switcher"
                 className="select-input"
                 value={activeOrganizationId}
                 onChange={(event) => onSwitchOrganization(event.target.value)}
@@ -160,7 +167,6 @@ export function SystemShell({
                   </option>
                 ))}
               </select>
-              <span className="organization-switcher__name">{activeOrganizationName}</span>
             </div>
           </div>
           <div className="topbar__actions">

@@ -69,7 +69,7 @@ export const config = environmentSchema
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['JWT_SECRET'],
-        message: 'JWT_SECRET de produccion debe ser aleatorio (por ejemplo: openssl rand -base64 48).',
+        message: 'JWT_SECRET de producción debe ser aleatorio (por ejemplo: openssl rand -base64 48).',
       })
     }
   })

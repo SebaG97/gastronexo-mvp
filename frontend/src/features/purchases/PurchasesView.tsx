@@ -468,7 +468,7 @@ export function PurchasesView({ token, canWritePurchases, createRequestId }: Pur
 
             <div className="purchase-form__items">
               <div className="purchase-form__items-header">
-                <strong>Items</strong>
+                <strong>Ítems</strong>
                 <Button type="button" variant="secondary" onClick={addPurchaseItem}>Agregar item</Button>
               </div>
               {purchaseItems.map((item, index) => {

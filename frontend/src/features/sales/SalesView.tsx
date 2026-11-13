@@ -158,7 +158,7 @@ export function SalesView({ token }: SalesViewProps) {
                   <th>Cliente</th>
                   <th>Entregado</th>
                   <th>Depósito</th>
-                  <th className="numeric-cell">Items</th>
+                  <th className="numeric-cell">Ítems</th>
                   <th className="numeric-cell">Total</th>
                 </tr>
               </thead>

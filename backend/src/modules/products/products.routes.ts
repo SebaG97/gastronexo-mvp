@@ -44,7 +44,7 @@ const createProductSchema = z.object({
   imageUrl: imageUrlSchema.nullable().optional(),
 }).refine((input) => !input.isCatalogVisible || input.isSellable, {
   path: ['isCatalogVisible'],
-  message: 'Un producto visible en catalogo debe ser vendible.',
+  message: 'Un producto visible en el catálogo debe ser vendible.',
 })
 
 const updateProductSchema = z
@@ -500,7 +500,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
             const nextIsCatalogVisible = input.isCatalogVisible ?? currentProduct.isCatalogVisible
 
             if (!nextIsSellable && nextIsCatalogVisible) {
-              abortTransaction(400, { message: 'Un producto visible en catalogo debe ser vendible.' })
+              abortTransaction(400, { message: 'Un producto visible en el catálogo debe ser vendible.' })
             }
           }
 
@@ -701,7 +701,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(201).send(created)
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ese corte ya esta asignado al producto.' })
+          return reply.code(409).send({ message: 'Ese corte ya está asignado al producto.' })
         }
         throw error
       }
@@ -758,7 +758,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
           const option = optionResult.rows[0]
 
           if (!option) {
-            abortTransaction(404, { message: 'Opcion de corte no encontrada.' })
+            abortTransaction(404, { message: 'Opción de corte no encontrada.' })
           }
 
           const nextIsActive = input.isActive ?? option.isActive
@@ -776,7 +776,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
             )
 
             if (!cutTypeResult.rows[0]) {
-              abortTransaction(400, { message: 'No se puede activar una opcion con tipo de corte inactivo.' })
+              abortTransaction(400, { message: 'No se puede activar una opción con un tipo de corte inactivo.' })
             }
           }
 
@@ -829,7 +829,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'El producto ya tiene una opcion de corte default activa.' })
+          return reply.code(409).send({ message: 'El producto ya tiene un corte por defecto activo.' })
         }
         throw error
       }
