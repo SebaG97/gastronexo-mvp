@@ -19,6 +19,8 @@ import {
   getCurrentSession,
   getStoredToken,
   login,
+  register,
+  type AuthRegisterRequest,
   saveStoredToken,
   switchOrganization,
   type AuthSession,
@@ -246,6 +248,20 @@ export function App() {
     setAuthStatus('authenticated')
   }
 
+  async function handleRegister(input: AuthRegisterRequest) {
+    const response = await register(input)
+
+    setSession({
+      token: response.token,
+      user: response.user,
+      organization: response.organization,
+    })
+    setOrganizations([response.organization])
+    setOrganizationSwitchError(null)
+    setActiveSection('dashboard')
+    setAuthStatus('authenticated')
+  }
+
   async function handleSwitchOrganization(organizationId: string) {
     if (!session || organizationId === session.organization.id) {
       return
@@ -303,7 +319,7 @@ export function App() {
   }
 
   if (authStatus !== 'authenticated' || !session) {
-    return <LoginView onLogin={handleLogin} />
+    return <LoginView onLogin={handleLogin} onRegister={handleRegister} />
   }
 
   const metadata = sectionMetadata[activeSection]

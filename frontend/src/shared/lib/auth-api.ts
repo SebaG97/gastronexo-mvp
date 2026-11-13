@@ -47,6 +47,15 @@ export type AuthLoginRequest = {
   organizationId?: string
 }
 
+// Mision 8.1: alta de cuenta y organizacion desde la pantalla de ingreso.
+export type AuthRegisterRequest = {
+  fullName: string
+  email: string
+  password: string
+  organizationName: string
+  organizationSlug: string
+}
+
 export type AuthLoginResponse = AuthSession & {
   organizations: SessionOrganization[]
 }
@@ -893,6 +902,16 @@ async function apiRequest<TResponse>(path: string, init: RequestInit = {}, token
 
 export async function login(input: AuthLoginRequest) {
   const response = await apiRequest<AuthLoginResponse>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+
+  saveStoredToken(response.token)
+  return response
+}
+
+export async function register(input: AuthRegisterRequest) {
+  const response = await apiRequest<AuthSession>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify(input),
   })
