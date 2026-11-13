@@ -69,6 +69,17 @@ La documentación de diseño y alcance está disponible en `docs/`.
 	npm run dev
 	```
 
+### Tienda pública (Misión 7.2)
+
+La tienda de cada organización vive en `http://localhost:5173/tienda/<slug>` y se publica desde **Tienda online** en la consola. Los pedidos entran a **Pedidos** como `new` con canal Tienda. Detalle en [`docs/mision-7.2-tienda-publica.md`](docs/mision-7.2-tienda-publica.md).
+
+Para cargar datos de ejemplo en tu organización (API local levantada):
+
+```bash
+cd backend
+SEED_EMAIL=tu@correo.com SEED_PASSWORD=tu-clave node scripts/seed-storefront-demo.mjs
+```
+
 ### Variables de entorno
 
 Backend (`backend/.env`):
@@ -79,6 +90,7 @@ Backend (`backend/.env`):
 - `JWT_SECRET`
 - `JWT_EXPIRES_IN` (ejemplo: `8h`)
 - `FRONTEND_ORIGIN`
+- `STOREFRONT_ORIGIN` (opcional: solo si la tienda se sirve desde otro dominio)
 - Opcionales, pool y protecciones de PostgreSQL (defaults en `backend/.env.example`): `DB_POOL_MAX`, `DB_POOL_CONNECTION_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, `DB_READY_TIMEOUT_MS`
 
 Frontend (`frontend/.env`):
