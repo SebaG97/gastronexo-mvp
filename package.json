@@ -10,6 +10,7 @@
     "dev": "node scripts/dev.mjs",
     "demo": "node scripts/demo.mjs",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
-    "db:migrate": "npm --prefix backend run db:migrate"
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "vista-previa": "node scripts/vista-previa-cliente.mjs"
   }
 }

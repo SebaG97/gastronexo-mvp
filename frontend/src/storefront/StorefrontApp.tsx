@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { resolveMediaUrl } from '../shared/lib/media'
 import { storeApi, type CatalogProduct, type Category, type Store, StoreApiError } from './api'
 import { CartPanel } from './CartPanel'
 import { Catalog } from './Catalog'
@@ -114,8 +115,15 @@ export function StorefrontApp() {
       ? Math.min(...store.deliveryZones.map((zone) => Number(zone.fee)))
       : null
 
+  // Mision 8.8: color de marca para la cabecera y los botones principales.
+  const brandStyle = store.brandColor
+    ? ({ '--sf-board': store.brandColor, '--sf-leaf': store.brandColor, '--sf-leaf-hover': `color-mix(in srgb, ${store.brandColor} 82%, black)` } as CSSProperties)
+    : undefined
+  const logoSrc = resolveMediaUrl(store.logoUrl)
+  const coverSrc = resolveMediaUrl(store.coverUrl)
+
   return (
-    <div className="sf">
+    <div className="sf" style={brandStyle}>
       <header className="sf-header">
         <div className="sf-header__bar">
           <a
@@ -126,7 +134,7 @@ export function StorefrontApp() {
               navigate({ view: 'catalog' })
             }}
           >
-            {store.name}
+            {logoSrc ? <img className="sf-brand__logo" src={logoSrc} alt={store.name} /> : store.name}
           </a>
           {route.view === 'catalog' && (
             <button
@@ -147,7 +155,8 @@ export function StorefrontApp() {
         </div>
         {route.view === 'catalog' && (
           <div className="sf-board">
-            <div className="sf-board__hero">
+            <div className={`sf-board__hero${coverSrc ? ' sf-board__hero--cover' : ''}`}>
+              <div className="sf-board__copy">
               {store.tagline && <p className="sf-board__tagline">{store.tagline}</p>}
               {cheapestDelivery !== null ? (
                 <p className="sf-board__tag">
@@ -165,6 +174,8 @@ export function StorefrontApp() {
                   <span>en el local</span>
                 </p>
               ) : null}
+              </div>
+              {coverSrc ? <img className="sf-board__cover" src={coverSrc} alt="" /> : null}
             </div>
             <dl className="sf-board__facts">
               {store.openingHours && (

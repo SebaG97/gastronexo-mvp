@@ -36,7 +36,8 @@
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid var(--sys-border);
@@ -44,6 +45,12 @@
   outline: none;
   color: var(--sys-text);
   background: var(--sys-bg);
+  font: inherit;
+  font-weight: 400;
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .checkbox-field {
@@ -62,7 +69,8 @@
   accent-color: var(--sys-primary);
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--sys-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
 }
@@ -1483,6 +1491,73 @@
   object-fit: cover;
 }
 
+/* Mision 8.7: foto del producto */
+.products-form__photo {
+  display: grid;
+  gap: 8px;
+}
+
+.products-form__photo-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.products-form__image-preview--empty {
+  display: grid;
+  place-items: center;
+  background: var(--sys-surface-muted, #f4f4f5);
+  color: var(--sys-text-muted, #6b7280);
+  font-size: 0.8rem;
+  border-style: dashed;
+}
+
+.products-form__photo-actions {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.products-form__photo-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.products-form__file-input {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.products-form__hint {
+  color: var(--sys-text-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.products-form__photo-link summary {
+  cursor: pointer;
+  color: var(--sys-text-muted, #6b7280);
+  font-size: 0.9rem;
+}
+
+.products-form__photo-link input {
+  margin-top: 6px;
+  width: 100%;
+}
+
 .storefront-settings-form {
   display: grid;
   gap: 16px;
@@ -1860,4 +1935,108 @@
   outline: none;
   border-color: var(--sys-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
+}
+
+/* Mision 8.8: marca de la tienda */
+.brand-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.brand-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 96px;
+  padding: 14px 18px;
+  border-radius: var(--sys-radius);
+  color: #eef3e6;
+  overflow: hidden;
+}
+
+.brand-preview__logo {
+  display: block;
+  max-width: min(220px, 55%);
+  max-height: 72px;
+  object-fit: contain;
+}
+
+.brand-preview__name {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.brand-preview__cover {
+  width: 128px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.brand-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sys-border);
+}
+
+.brand-panel__row > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.brand-panel__hint {
+  margin: 4px 0 0;
+  color: var(--sys-text-muted);
+  font-size: 0.875rem;
+}
+
+.brand-panel__actions,
+.brand-panel__colors {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px 4px 6px;
+  border: 1px solid var(--sys-border);
+  border-radius: 999px;
+  color: var(--sys-text);
+  background: var(--sys-surface);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.brand-swatch[aria-checked='true'] {
+  border-color: var(--sys-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sys-primary) 30%, transparent);
+  font-weight: 650;
+}
+
+.brand-swatch__color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.brand-swatch--custom input[type='color'] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
 }

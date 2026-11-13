@@ -14,14 +14,14 @@ import { StockView } from '../features/stock/StockView'
 import { WasteView } from '../features/waste/WasteView'
 import { StorefrontSettingsView } from '../features/storefront/StorefrontSettingsView'
 import {
-  clearStoredToken,
   getUserOrganizations,
   getCurrentSession,
-  getStoredToken,
+  COOKIE_SESSION,
+  forgetLegacyStoredToken,
+  logout,
   login,
   register,
   type AuthRegisterRequest,
-  saveStoredToken,
   switchOrganization,
   type AuthSession,
   type SessionOrganization,
@@ -196,13 +196,9 @@ export function App() {
   }, [activeSection, canManageMembers])
 
   useEffect(() => {
-    const token = getStoredToken()
-
-    if (!token) {
-      setAuthStatus('unauthenticated')
-      return
-    }
-
+    // Mision 8.12: la sesion se recupera por la cookie HttpOnly (si no hay, /me responde 401).
+    forgetLegacyStoredToken()
+    const token = COOKIE_SESSION
     let cancelled = false
 
     const recoverSession = async () => {
@@ -228,7 +224,6 @@ export function App() {
           return
         }
 
-        clearStoredToken()
         setSession(null)
         setOrganizations([])
         setAuthStatus('unauthenticated')
@@ -284,7 +279,6 @@ export function App() {
         getUserOrganizations(switchResponse.token),
       ])
 
-      saveStoredToken(switchResponse.token)
       // La vista se re-monta por organización (ver `key` abajo); los pedidos de acción
       // primaria pendientes no deben reabrir formularios en la organización nueva.
       setProductCreateRequestId(0)
@@ -308,7 +302,8 @@ export function App() {
   }
 
   function handleLogout() {
-    clearStoredToken()
+    // Borra la cookie en la API; aunque falle (sin red), la pantalla sale de la sesion.
+    void logout().catch(() => undefined)
     setSession(null)
     setOrganizations([])
     setOrganizationSwitchError(null)

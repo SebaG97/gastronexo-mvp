@@ -7,6 +7,7 @@ import {
   getProducts,
   updateProduct,
   updateProductStatus,
+  uploadProductImage,
   type ProductCategory,
   type ProductMutationInput,
   type Product,
@@ -14,7 +15,7 @@ import {
 } from '../../shared/lib/auth-api'
 import { ProductCategoriesManager } from './ProductCategoriesManager'
 import { ProductCutOptionsManager } from './ProductCutOptionsManager'
-import { ProductForm, type ProductFormValues } from './ProductForm'
+import { ProductForm, type ProductFormExtras, type ProductFormValues } from './ProductForm'
 import { productTypeLabelByKey } from './product-types'
 import { productUnitLabelByKey } from './product-units'
 
@@ -148,15 +149,29 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     void loadActiveCategories()
   }, [token])
 
-  async function handleCreate(values: ProductMutationInput) {
+  // Mision 8.7: la foto elegida se sube despues de guardar, cuando el producto ya tiene id.
+  async function uploadImageAfterSave(productId: string, imageFile: File | null) {
+    if (!imageFile) return null
+    try {
+      await uploadProductImage(productId, imageFile, token)
+      return null
+    } catch (error) {
+      const reason = error instanceof ApiError ? error.message : 'Probá de nuevo.'
+      return `El producto se guardó, pero la foto no se pudo subir. ${reason}`
+    }
+  }
+
+  async function handleCreate(values: ProductMutationInput, { imageFile }: ProductFormExtras) {
     setErrorMessage(null)
     setSuccessMessage(null)
     setIsSubmitting(true)
 
     try {
-      await createProduct(values, token)
+      const { product } = await createProduct(values, token)
+      const imageProblem = await uploadImageAfterSave(product.id, imageFile)
       setFormMode({ type: 'closed' })
-      setSuccessMessage('Producto creado correctamente.')
+      if (imageProblem) setErrorMessage(imageProblem)
+      else setSuccessMessage('Producto creado correctamente.')
       await loadProducts()
     } catch (error) {
       if (error instanceof ApiError) {
@@ -169,7 +184,7 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     }
   }
 
-  async function handleEdit(values: ProductMutationInput) {
+  async function handleEdit(values: ProductMutationInput, { imageFile }: ProductFormExtras) {
     if (formMode.type !== 'edit') {
       return
     }
@@ -180,8 +195,10 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
 
     try {
       await updateProduct(formMode.product.id, values, token)
+      const imageProblem = await uploadImageAfterSave(formMode.product.id, imageFile)
       setFormMode({ type: 'closed' })
-      setSuccessMessage('Producto actualizado correctamente.')
+      if (imageProblem) setErrorMessage(imageProblem)
+      else setSuccessMessage('Producto actualizado correctamente.')
       await loadProducts()
     } catch (error) {
       if (error instanceof ApiError) {
@@ -225,6 +242,11 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
     }
   }
 
+  const editInitialValues = useMemo(
+    () => (formMode.type === 'edit' ? toFormValues(formMode.product) : undefined),
+    [formMode],
+  )
+
   return (
     <main className="page products-page" aria-busy={isLoading}>
       <div className="page-header">
@@ -240,12 +262,12 @@ export function ProductsView({ token, canWriteProducts, createRequestId }: Produ
           title={formMode.type === 'create' ? 'Nuevo producto' : 'Editar producto'}
         >
           <ProductForm
-            initialValues={formMode.type === 'edit' ? toFormValues(formMode.product) : undefined}
+            initialValues={editInitialValues}
             categories={activeCategories}
             submitLabel={formMode.type === 'create' ? 'Crear producto' : 'Guardar cambios'}
             isSubmitting={isSubmitting}
-            onSubmit={(values) =>
-              formMode.type === 'create' ? handleCreate(values) : handleEdit(values)
+            onSubmit={(values, extras) =>
+              formMode.type === 'create' ? handleCreate(values, extras) : handleEdit(values, extras)
             }
             onCancel={() => setFormMode({ type: 'closed' })}
           />

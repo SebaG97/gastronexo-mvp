@@ -1,8 +1,10 @@
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
 import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { config } from './config.js'
+import { csrfGuard, SESSION_COOKIE } from './security/session-cookie.js'
 import { getDatabaseErrorCode, isDatabaseUnavailableError } from './db/errors.js'
 import { readinessPool } from './db/pool.js'
 import { TransactionAbort } from './db/transaction.js'
@@ -20,10 +22,13 @@ import { suppliersRoutes } from './modules/purchases/suppliers.routes.js'
 import { cutTypesRoutes } from './modules/products/cut-types.routes.js'
 import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
+import { productImagesRoutes } from './modules/products/product-images.routes.js'
+import { uploadsRoutes } from './media/uploads.routes.js'
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js'
 import { wasteRoutes } from './modules/waste/waste.routes.js'
 import { publicStorefrontRoutes } from './modules/storefront/public.routes.js'
 import { storefrontAdminRoutes } from './modules/storefront/storefront-admin.routes.js'
+import { storefrontBrandingRoutes } from './modules/storefront/storefront-branding.routes.js'
 
 const SERVICE_UNAVAILABLE_BODY = {
   message: 'El servicio está ocupado. Intentá de nuevo en unos segundos.',
@@ -33,7 +38,11 @@ const SERVICE_UNAVAILABLE_BODY = {
 export function buildApp() {
   const app = Fastify({
     logger: true,
-    trustProxy: config.TRUST_PROXY,
+    // Fastify 5.12 ya no tipa un numero de saltos: se traduce a la funcion equivalente (mision 8.10).
+    trustProxy:
+      typeof config.TRUST_PROXY === 'number'
+        ? ((hops: number) => (_address: string, hop: number) => hop < hops)(config.TRUST_PROXY)
+        : config.TRUST_PROXY,
     // Ningun endpoint necesita mas: un pedido de 100 items ocupa unos pocos KB.
     bodyLimit: 256 * 1024,
   })
@@ -56,7 +65,14 @@ export function buildApp() {
     origin: config.STOREFRONT_ORIGIN ? [config.FRONTEND_ORIGIN, config.STOREFRONT_ORIGIN] : config.FRONTEND_ORIGIN,
     credentials: true,
   })
-  app.register(jwt, { secret: config.JWT_SECRET, verify: { algorithms: ['HS256'] } })
+  // Mision 8.12: sesion del navegador en cookie HttpOnly (ver security/session-cookie.ts).
+  app.register(cookie)
+  app.register(jwt, {
+    secret: config.JWT_SECRET,
+    verify: { algorithms: ['HS256'] },
+    cookie: { cookieName: SESSION_COOKIE, signed: false },
+  })
+  app.addHook('onRequest', csrfGuard)
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof TransactionAbort) {
@@ -137,6 +153,8 @@ export function buildApp() {
   app.register(cutTypesRoutes, { prefix: '/api/cut-types' })
   app.register(productCategoriesRoutes, { prefix: '/api/product-categories' })
   app.register(productsRoutes, { prefix: '/api/products' })
+  app.register(productImagesRoutes, { prefix: '/api/products' })
+  app.register(uploadsRoutes, { prefix: '/api/uploads' })
   app.register(warehousesRoutes, { prefix: '/api/warehouses' })
   app.register(inventoryRoutes, { prefix: '/api/inventory' })
   app.register(suppliersRoutes, { prefix: '/api/suppliers' })
@@ -146,6 +164,7 @@ export function buildApp() {
   app.register(recipesRoutes, { prefix: '/api/recipes' })
   app.register(productionRunsRoutes, { prefix: '/api/production-runs' })
   app.register(storefrontAdminRoutes, { prefix: '/api/storefront' })
+  app.register(storefrontBrandingRoutes, { prefix: '/api/storefront' })
   app.register(publicStorefrontRoutes, { prefix: '/api/public' })
   app.register(notificationsRoutes, { prefix: '/api/notifications' })
   app.register(wasteRoutes, { prefix: '/api/waste' })

@@ -38,8 +38,22 @@ openssl rand -base64 48
 | `JWT_SECRET` | App-level (la usan la API y el job) | **Sí.** Con `NODE_ENV=production` la API no arranca con un valor de ejemplo. |
 | `TELEGRAM_BOT_TOKEN` | Componente `api` | No. Sin valor, Telegram figura como "no configurado". Cómo crear el bot: `docs/mision-7.4-avisos-telegram-email.md`. |
 | `RESEND_API_KEY` y `EMAIL_FROM` | Componente `api` | No. Sin valor, el email figura como "no configurado". |
+| `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY` | Componente `api` | **Sí** (desde la 8.7). Son las claves del Space de las fotos. Ver abajo. |
 
 Marcalas como **Encrypt** (tipo SECRET). Las variables vacías se ignoran: no impiden el arranque.
+
+### Space para las fotos de productos (misión 8.7)
+
+El disco del contenedor de App Platform se borra en cada despliegue, así que las fotos se guardan en un **Space** (almacenamiento de archivos de DigitalOcean, compatible con S3):
+
+1. **Spaces Object Storage → Create**, región `nyc3`, con **CDN activado**. Anotá el nombre del Space.
+2. **API → Spaces Keys → Generate New Key**. Guardá el *Access Key* y el *Secret*: el secret se muestra una sola vez.
+3. En la spec, componente `api`, completá:
+   - `S3_BUCKET`: el nombre del Space;
+   - `S3_PUBLIC_BASE_URL`: `https://<space>.nyc3.cdn.digitaloceanspaces.com`, el endpoint del CDN;
+   - `S3_ACCESS_KEY_ID` y `S3_SECRET_ACCESS_KEY`: como secretos.
+
+Cada foto se sube como pública y con caché larga, así que no hace falta abrir permisos del Space a mano. Con `MEDIA_STORAGE=s3`, si falta alguna de estas variables la API no arranca y el log dice cuál es.
 
 ## Paso 3. Crear la app
 
@@ -56,7 +70,7 @@ Después, en **Settings**, cargá los secretos del Paso 2 y guardá. Eso dispara
 
 ## Paso 4. Primer despliegue
 
-Orden de App Platform: build de los componentes → job `migrate` (crea las tablas, de la 001 a la 010) → API y web.
+Orden de App Platform: build de los componentes → job `migrate` (crea las tablas, de la 001 a la 013) → API y web.
 
 - **Logs del job:** `doctl apps logs <app-id> migrate --type run`. Tiene que mostrar `Applied migration 001_…` hasta `010_…`. En los despliegues siguientes no muestra nada si no hay migraciones nuevas.
 - **API:** `https://<tu-app>.ondigitalocean.app/api/...` y el health check interno `/health`.

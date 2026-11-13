@@ -1,3 +1,8 @@
+// Mision 8.12: la sesion vive en una cookie HttpOnly que pone la API; el frontend no guarda ni
+// lee el JWT. Los componentes siguen recibiendo un `token`, que ahora es este marcador: indica
+// "hay sesion" y no sirve fuera del navegador.
+export const COOKIE_SESSION = 'cookie-session'
+// Clave vieja (hasta la 8.11): se borra al arrancar para no dejar tokens en localStorage.
 export const AUTH_TOKEN_STORAGE_KEY = 'gastronexo:auth:token'
 
 // En produccion, sin VITE_API_URL, la API se sirve en el mismo origen (/api), como en
@@ -556,6 +561,10 @@ export type StorefrontSettings = {
   allowsDelivery: boolean
   paymentMethods: StorefrontPaymentMethod[]
   transferDetails: string | null
+  // Marca (mision 8.8)
+  logoUrl: string | null
+  coverUrl: string | null
+  brandColor: string | null
 }
 
 export type DeliveryZone = {
@@ -571,7 +580,10 @@ export type StorefrontSettingsResponse = {
   zones: DeliveryZone[]
 }
 
-export type StorefrontSettingsInput = Omit<StorefrontSettings, 'organizationId' | 'organizationName' | 'slug' | 'minOrderAmount'> & {
+export type StorefrontSettingsInput = Omit<
+  StorefrontSettings,
+  'organizationId' | 'organizationName' | 'slug' | 'minOrderAmount' | 'logoUrl' | 'coverUrl' | 'brandColor'
+> & {
   minOrderAmount: number
 }
 
@@ -848,16 +860,13 @@ export function getInsufficientStockError(error: unknown): InsufficientStockErro
   return null
 }
 
-export function getStoredToken() {
-  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-}
-
-export function saveStoredToken(token: string) {
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
-}
-
-export function clearStoredToken() {
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+/** Borra el token que versiones anteriores guardaban en localStorage. */
+export function forgetLegacyStoredToken() {
+  try {
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+  } catch {
+    // almacenamiento bloqueado: no hay nada que borrar
+  }
 }
 
 async function apiRequest<TResponse>(path: string, init: RequestInit = {}, token?: string) {
@@ -868,13 +877,17 @@ async function apiRequest<TResponse>(path: string, init: RequestInit = {}, token
     headers.set('Content-Type', 'application/json')
   }
 
-  if (token) {
+  // Un token real (no el marcador) se manda como Bearer; la sesion del navegador va en la cookie.
+  if (token && token !== COOKIE_SESSION) {
     headers.set('Authorization', `Bearer ${token}`)
   }
+  // La API exige este header en las escrituras con sesion por cookie (proteccion CSRF).
+  headers.set('X-Gastronexo-Client', 'web')
 
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers,
+    credentials: 'include',
   })
 
   let payload: unknown = null
@@ -884,10 +897,6 @@ async function apiRequest<TResponse>(path: string, init: RequestInit = {}, token
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearStoredToken()
-    }
-
     const message =
       typeof payload === 'object' &&
       payload !== null &&
@@ -908,8 +917,7 @@ export async function login(input: AuthLoginRequest) {
     body: JSON.stringify(input),
   })
 
-  saveStoredToken(response.token)
-  return response
+  return { ...response, token: COOKIE_SESSION }
 }
 
 export async function register(input: AuthRegisterRequest) {
@@ -918,8 +926,11 @@ export async function register(input: AuthRegisterRequest) {
     body: JSON.stringify(input),
   })
 
-  saveStoredToken(response.token)
-  return response
+  return { ...response, token: COOKIE_SESSION }
+}
+
+export async function logout() {
+  await apiRequest<null>('/api/auth/logout', { method: 'POST' })
 }
 
 export async function getCurrentSession(token: string) {
@@ -931,7 +942,7 @@ export async function getUserOrganizations(token: string) {
 }
 
 export async function switchOrganization(input: AuthSwitchOrganizationRequest, token: string) {
-  return apiRequest<AuthSwitchOrganizationResponse>(
+  const response = await apiRequest<AuthSwitchOrganizationResponse>(
     '/api/auth/switch-organization',
     {
       method: 'POST',
@@ -939,6 +950,8 @@ export async function switchOrganization(input: AuthSwitchOrganizationRequest, t
     },
     token,
   )
+  // La API ya cambio la cookie a la organizacion nueva.
+  return { ...response, token: COOKIE_SESSION }
 }
 
 export async function getOrganizationMembers(token: string) {
@@ -1028,6 +1041,19 @@ export async function updateProduct(
     },
     token,
   )
+}
+
+// Mision 8.7: la foto viaja como cuerpo crudo (Content-Type de la imagen), sin multipart.
+export async function uploadProductImage(productId: string, file: File, token: string) {
+  return apiRequest<{ product: { id: string; imageUrl: string } }>(
+    `/api/products/${productId}/image`,
+    { method: 'POST', body: file, headers: { 'Content-Type': file.type } },
+    token,
+  )
+}
+
+export async function deleteProductImage(productId: string, token: string) {
+  return apiRequest<{ product: { id: string; imageUrl: null } }>(`/api/products/${productId}/image`, { method: 'DELETE' }, token)
 }
 
 export async function updateProductStatus(productId: string, isActive: boolean, token: string) {
@@ -1755,6 +1781,29 @@ export async function updateStorefrontSettings(input: StorefrontSettingsInput, t
   return apiRequest<StorefrontSettingsResponse>(
     '/api/storefront/settings',
     { method: 'PUT', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+// Mision 8.8: logo y portada de la tienda (imagen como cuerpo crudo) y color de la cabecera.
+export type StoreImageSlot = 'logo' | 'cover'
+
+export async function uploadStoreImage(slot: StoreImageSlot, file: File, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(
+    `/api/storefront/${slot}`,
+    { method: 'POST', body: file, headers: { 'Content-Type': file.type } },
+    token,
+  )
+}
+
+export async function deleteStoreImage(slot: StoreImageSlot, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(`/api/storefront/${slot}`, { method: 'DELETE' }, token)
+}
+
+export async function updateStoreBrandColor(brandColor: string | null, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(
+    '/api/storefront/brand-color',
+    { method: 'PUT', body: JSON.stringify({ brandColor }) },
     token,
   )
 }

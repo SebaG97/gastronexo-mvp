@@ -1,5 +1,6 @@
 import { Minus, Plus, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { resolveMediaUrl } from '../shared/lib/media'
 import type { CatalogProduct, Category } from './api'
 import { formatAmount, formatMoney, formatQuantity, perUnitLabel, quantityStep } from './format'
 import { lineKey, type Cart } from './useCart'
@@ -43,7 +44,7 @@ export function ProductThumb({ product, size = 'card' }: { product: CatalogProdu
     return (
       <img
         className={`sf-thumb sf-thumb--${size}`}
-        src={product.imageUrl}
+        src={resolveMediaUrl(product.imageUrl) ?? undefined}
         alt=""
         loading="lazy"
         onError={() => setFailed(true)}

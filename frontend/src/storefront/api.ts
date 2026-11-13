@@ -21,6 +21,9 @@ export type Store = {
   allowsDelivery: boolean
   paymentMethods: PaymentMethod[]
   transferDetails: string | null
+  logoUrl: string | null
+  coverUrl: string | null
+  brandColor: string | null
   deliveryZones: Array<{ id: string; name: string; fee: string }>
 }
 

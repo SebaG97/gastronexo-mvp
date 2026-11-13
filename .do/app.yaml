@@ -75,6 +75,22 @@ services:
         type: SECRET
       - key: EMAIL_FROM
         value: "" # CAMBIAR, por ejemplo: Gastronexo <pedidos@tudominio.com>
+      # Fotos de productos (mision 8.7). El disco del contenedor se borra en cada deploy: las
+      # fotos van a un Space. Ver docs/despliegue-digitalocean.md, paso 2.
+      - key: MEDIA_STORAGE
+        value: s3
+      - key: S3_ENDPOINT
+        value: https://nyc3.digitaloceanspaces.com
+      - key: S3_REGION
+        value: nyc3
+      - key: S3_BUCKET
+        value: "" # CAMBIAR: nombre del Space
+      - key: S3_PUBLIC_BASE_URL
+        value: "" # CAMBIAR: https://<space>.nyc3.cdn.digitaloceanspaces.com
+      - key: S3_ACCESS_KEY_ID
+        type: SECRET
+      - key: S3_SECRET_ACCESS_KEY
+        type: SECRET
 
 jobs:
   - name: migrate
