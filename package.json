@@ -1,0 +1,15 @@
+{
+  "name": "gastronexo-mvp",
+  "private": true,
+  "description": "Comandos de desarrollo local (mision 8.2). El codigo vive en backend/ y frontend/.",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "demo": "node scripts/demo.mjs",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "db:migrate": "npm --prefix backend run db:migrate"
+  }
+}
