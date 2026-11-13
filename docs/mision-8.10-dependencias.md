@@ -24,7 +24,7 @@
 - **Página publicada** (`npm audit --omit=dev`): 0 vulnerabilidades.
 - **Herramientas de desarrollo:**
   - Se actualizaron `nanoid` y `source-map-js` sin romper nada.
-  - **Pendiente: Vite 5 → 8.** Las alertas de Vite y esbuild afectan solo al servidor de desarrollo cuando se expone a la red. `npm run dev` lo levanta solo en `localhost`, así que hoy no es explotable. Es un salto de versión mayor, para una misión aparte.
+  - **Vite 5 → 8: hecho en la 8.11** (`docs/mision-8.11-vite-8.md`). Antes de eso: Las alertas de Vite y esbuild afectan solo al servidor de desarrollo cuando se expone a la red. `npm run dev` lo levanta solo en `localhost`, así que hoy no es explotable. Es un salto de versión mayor, para una misión aparte.
 
 ## Verificación
 
