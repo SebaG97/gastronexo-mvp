@@ -36,7 +36,8 @@
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid var(--sys-border);
@@ -44,6 +45,12 @@
   outline: none;
   color: var(--sys-text);
   background: var(--sys-bg);
+  font: inherit;
+  font-weight: 400;
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .checkbox-field {
@@ -62,7 +69,8 @@
   accent-color: var(--sys-primary);
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--sys-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
 }
@@ -1481,6 +1489,73 @@
   border: 1px solid var(--sys-border);
   border-radius: var(--sys-radius);
   object-fit: cover;
+}
+
+/* Mision 8.7: foto del producto */
+.products-form__photo {
+  display: grid;
+  gap: 8px;
+}
+
+.products-form__photo-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.products-form__image-preview--empty {
+  display: grid;
+  place-items: center;
+  background: var(--sys-surface-muted, #f4f4f5);
+  color: var(--sys-text-muted, #6b7280);
+  font-size: 0.8rem;
+  border-style: dashed;
+}
+
+.products-form__photo-actions {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.products-form__photo-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.products-form__file-input {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.products-form__hint {
+  color: var(--sys-text-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.products-form__photo-link summary {
+  cursor: pointer;
+  color: var(--sys-text-muted, #6b7280);
+  font-size: 0.9rem;
+}
+
+.products-form__photo-link input {
+  margin-top: 6px;
+  width: 100%;
 }
 
 .storefront-settings-form {

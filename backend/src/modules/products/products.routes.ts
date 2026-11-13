@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { pool } from '../../db/pool.js'
 import { abortTransaction, withTransaction, type DbClient } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
+import { imageUrlBelongsTo, isAcceptableImageUrl, removeImageIfUnused } from '../../media/product-images.js'
 
 const allowedProductUnits = ['unit', 'kg', 'g', 'l', 'ml', 'box', 'portion'] as const
 const allowedProductTypes = ['raw_material', 'finished_product'] as const
@@ -23,12 +24,12 @@ const productIdParamsSchema = z.object({
 })
 
 // Solo http(s): z.string().url() acepta tambien javascript:, data: y file: (mision 7.1).
+// Desde la 8.7 tambien una foto subida a la propia API (/api/uploads/products/...).
 const imageUrlSchema = z
   .string()
   .trim()
-  .url()
   .max(1000)
-  .refine((value) => /^https?:\/\//i.test(value), { message: 'La imagen debe ser una URL http o https.' })
+  .refine((value) => value === '' || isAcceptableImageUrl(value), { message: 'La imagen debe ser una URL http o https.' })
 
 const createProductSchema = z.object({
   name: z.string().trim().min(2).max(160),
@@ -324,6 +325,9 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const input = createProductSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
+      if (!imageUrlBelongsTo(input.imageUrl, organizationId)) {
+        return reply.code(400).send({ message: 'Esa foto pertenece a otro negocio.' })
+      }
       try {
         const product = await withTransaction(async (client) => {
           if (input.categoryId) {
@@ -406,6 +410,11 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       const { id } = productIdParamsSchema.parse(request.params)
       const input = updateProductSchema.parse(request.body)
       const organizationId = request.organizationAccess!.organization.id
+      if (!imageUrlBelongsTo(input.imageUrl, organizationId)) {
+        return reply.code(400).send({ message: 'Esa foto pertenece a otro negocio.' })
+      }
+      // Foto anterior: si se reemplaza por otra (o se quita), se borra al terminar (mision 8.7).
+      let previousImageUrl: string | null = null
 
       const assignments: string[] = []
       const values: Array<string | number | boolean | null> = [organizationId, id]
@@ -468,7 +477,14 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
       assignments.push('updated_at = NOW()')
 
       try {
-        return await withTransaction(async (client) => {
+        const response = await withTransaction(async (client) => {
+          if (input.imageUrl !== undefined) {
+            const current = await client.query<{ imageUrl: string | null }>(
+              `SELECT image_url AS "imageUrl" FROM products WHERE organization_id = $1 AND id = $2 FOR NO KEY UPDATE`,
+              [organizationId, id],
+            )
+            previousImageUrl = current.rows[0]?.imageUrl ?? null
+          }
 
           if (input.categoryId) {
             const categoryExists = await categoryExistsAndIsActive(client, organizationId, input.categoryId)
@@ -545,6 +561,12 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
 
           return { product }
         })
+        if (previousImageUrl && previousImageUrl !== response.product.imageUrl) {
+          await removeImageIfUnused(previousImageUrl, organizationId).catch((error) =>
+            request.log.warn({ err: error }, 'No se pudo borrar la foto anterior del producto.'),
+          )
+        }
+        return response
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ message: productUniqueMessage(error) })

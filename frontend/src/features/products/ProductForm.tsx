@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../shared/components'
 import type { ProductCategory, ProductType, ProductUnit } from '../../shared/lib/auth-api'
+import { ACCEPTED_IMAGE_TYPES, imageFileProblem, resolveMediaUrl } from '../../shared/lib/media'
 import { productTypeCatalog } from './product-types'
 import { productUnitCatalog } from './product-units'
 
@@ -29,7 +30,12 @@ type ProductFormSubmitPayload = {
   isCatalogVisible: boolean
   salePrice: number | null
   description: string | null
-  imageUrl: string | null
+  // Sin definir cuando hay una foto nueva para subir: la sube quien guarda (mision 8.7).
+  imageUrl?: string | null
+}
+
+export type ProductFormExtras = {
+  imageFile: File | null
 }
 
 type ProductFormProps = {
@@ -37,7 +43,7 @@ type ProductFormProps = {
   categories: ProductCategory[]
   submitLabel: string
   isSubmitting: boolean
-  onSubmit: (values: ProductFormSubmitPayload) => Promise<void>
+  onSubmit: (values: ProductFormSubmitPayload, extras: ProductFormExtras) => Promise<void>
   onCancel: () => void
 }
 
@@ -65,11 +71,47 @@ export function ProductForm({
 }: ProductFormProps) {
   const [values, setValues] = useState<ProductFormValues>(initialValues)
   const [errors, setErrors] = useState<Partial<Record<keyof ProductFormValues, string>>>({})
+  // Foto elegida en este formulario, todavia sin subir.
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageFilePreview, setImageFilePreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setValues(initialValues)
     setErrors({})
+    setImageFile(null)
   }, [initialValues])
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImageFilePreview(null)
+      return
+    }
+    const objectUrl = URL.createObjectURL(imageFile)
+    setImageFilePreview(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [imageFile])
+
+  function handleImageFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+    event.target.value = ''
+    if (!file) return
+    const problem = imageFileProblem(file)
+    if (problem) {
+      setErrors((current) => ({ ...current, imageUrl: problem }))
+      return
+    }
+    setImageFile(file)
+    setErrors((current) => ({ ...current, imageUrl: undefined }))
+  }
+
+  function handleRemoveImage() {
+    setImageFile(null)
+    setField('imageUrl', '')
+  }
+
+  const isUploadedImage = values.imageUrl.trim().startsWith('/api/uploads/')
+  const currentImageSrc = imageFilePreview ?? (errors.imageUrl ? null : resolveMediaUrl(values.imageUrl.trim()))
 
   function setField<K extends keyof ProductFormValues>(field: K, value: ProductFormValues[K]) {
     setValues((current) => ({ ...current, [field]: value }))
@@ -116,7 +158,7 @@ export function ProductForm({
       nextErrors.salePrice = 'El precio de venta debe ser mayor o igual a 0.'
     }
 
-    if (values.imageUrl.trim() && !/^https?:\/\/\S+$/i.test(values.imageUrl.trim())) {
+    if (!imageFile && values.imageUrl.trim() && !isUploadedImage && !/^https?:\/\/\S+$/i.test(values.imageUrl.trim())) {
       nextErrors.imageUrl = 'La imagen tiene que ser un link que empiece con https://'
     }
 
@@ -145,7 +187,7 @@ export function ProductForm({
       isCatalogVisible: values.isSellable ? values.isCatalogVisible : false,
       salePrice: values.isSellable ? parsedSalePrice : null,
       description: values.description.trim() || null,
-      imageUrl: values.imageUrl.trim() || null,
+      ...(imageFile ? {} : { imageUrl: values.imageUrl.trim() || null }),
     }
   }
 
@@ -157,7 +199,7 @@ export function ProductForm({
       return
     }
 
-    await onSubmit(payload)
+    await onSubmit(payload, { imageFile })
   }
 
   return (
@@ -315,20 +357,58 @@ export function ProductForm({
           {errors.description ? <span className="form-error">{errors.description}</span> : null}
         </label>
 
-        <label className="field">
-          Imagen para la tienda (link, opcional)
-          <input
-            type="url"
-            value={values.imageUrl}
-            onChange={(event) => setField('imageUrl', event.target.value)}
-            disabled={isSubmitting}
-            placeholder="https://..."
-          />
+        <div className="field products-form__photo">
+          <span>Foto para la tienda (opcional)</span>
+          <div className="products-form__photo-row">
+            {currentImageSrc ? (
+              <img className="products-form__image-preview" src={currentImageSrc} alt="Vista previa de la foto" />
+            ) : (
+              <div className="products-form__image-preview products-form__image-preview--empty" aria-hidden="true">
+                Sin foto
+              </div>
+            )}
+            <div className="products-form__photo-actions">
+              <div className="products-form__photo-buttons">
+                <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={isSubmitting}>
+                  {currentImageSrc ? 'Cambiar foto' : 'Subir foto'}
+                </Button>
+                {currentImageSrc ? (
+                  <Button type="button" variant="secondary" onClick={handleRemoveImage} disabled={isSubmitting}>
+                    Quitar foto
+                  </Button>
+                ) : null}
+              </div>
+              <input
+                ref={fileInputRef}
+                className="products-form__file-input"
+                type="file"
+                accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                onChange={handleImageFileChange}
+                tabIndex={-1}
+                aria-label="Elegir foto del producto"
+              />
+              <small className="products-form__hint">
+                {imageFile
+                  ? `Se sube al guardar: ${imageFile.name}`
+                  : 'JPG, PNG o WebP. Se achica sola para que cargue rápido en el celular.'}
+              </small>
+            </div>
+          </div>
           {errors.imageUrl ? <span className="form-error">{errors.imageUrl}</span> : null}
-        </label>
-        {values.imageUrl.trim() && !errors.imageUrl ? (
-          <img className="products-form__image-preview" src={values.imageUrl.trim()} alt="Vista previa de la imagen" />
-        ) : null}
+          {!imageFile && !isUploadedImage ? (
+            <details className="products-form__photo-link">
+              <summary>Usar un link de internet en su lugar</summary>
+              <input
+                type="url"
+                value={values.imageUrl}
+                onChange={(event) => setField('imageUrl', event.target.value)}
+                disabled={isSubmitting}
+                placeholder="https://..."
+                aria-label="Link de la foto"
+              />
+            </details>
+          ) : null}
+        </div>
         {errors.isCatalogVisible ? (
           <span className="form-error">{errors.isCatalogVisible}</span>
         ) : null}

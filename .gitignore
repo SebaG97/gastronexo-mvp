@@ -5,3 +5,7 @@ dist/
 .env
 .env.local
 backend/.env
+
+# Material original del cliente (fotos y logo sin optimizar)
+material-cliente/
+backend/uploads/

@@ -45,6 +45,23 @@ const environmentSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+  // Fotos subidas (mision 8.7). local: disco de la API (solo desarrollo; en App Platform se borra
+  // en cada deploy). s3: DigitalOcean Spaces o cualquier almacenamiento compatible con S3.
+  MEDIA_STORAGE: z.enum(['local', 's3']).default('local'),
+  UPLOADS_DIR: z.string().trim().default('uploads'),
+  MEDIA_MAX_UPLOAD_MB: z.coerce.number().min(1).max(50).default(15),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().trim().default('us-east-1'),
+  S3_BUCKET: z.string().trim().min(3).optional(),
+  S3_ACCESS_KEY_ID: z.string().trim().min(3).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().trim().min(3).optional(),
+  // URL publica de los archivos, por ejemplo https://<space>.nyc3.cdn.digitaloceanspaces.com
+  S3_PUBLIC_BASE_URL: z.string().url().refine((value) => /^https?:\/\//i.test(value)).optional(),
+  // MinIO necesita rutas tipo endpoint/bucket/clave; Spaces no.
+  S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   // Origen de la tienda publica si se sirve desde otro dominio (opcional).
   STOREFRONT_ORIGIN: z.string().url().optional(),
   // Pool de conexiones de la API.
@@ -71,6 +88,13 @@ export const config = environmentSchema
         path: ['JWT_SECRET'],
         message: 'JWT_SECRET de producción debe ser aleatorio (por ejemplo: openssl rand -base64 48).',
       })
+    }
+    if (environment.MEDIA_STORAGE === 's3') {
+      for (const key of ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PUBLIC_BASE_URL'] as const) {
+        if (!environment[key]) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} es obligatorio con MEDIA_STORAGE=s3.` })
+        }
+      }
     }
   })
   // Una variable vacia cuenta como no definida: en App Platform es comun dejar un SECRET o un

@@ -1030,6 +1030,19 @@ export async function updateProduct(
   )
 }
 
+// Mision 8.7: la foto viaja como cuerpo crudo (Content-Type de la imagen), sin multipart.
+export async function uploadProductImage(productId: string, file: File, token: string) {
+  return apiRequest<{ product: { id: string; imageUrl: string } }>(
+    `/api/products/${productId}/image`,
+    { method: 'POST', body: file, headers: { 'Content-Type': file.type } },
+    token,
+  )
+}
+
+export async function deleteProductImage(productId: string, token: string) {
+  return apiRequest<{ product: { id: string; imageUrl: null } }>(`/api/products/${productId}/image`, { method: 'DELETE' }, token)
+}
+
 export async function updateProductStatus(productId: string, isActive: boolean, token: string) {
   return apiRequest<{ product: Product }>(
     `/api/products/${productId}/status`,

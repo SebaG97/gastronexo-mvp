@@ -20,6 +20,8 @@ import { suppliersRoutes } from './modules/purchases/suppliers.routes.js'
 import { cutTypesRoutes } from './modules/products/cut-types.routes.js'
 import { productCategoriesRoutes } from './modules/products/product-categories.routes.js'
 import { productsRoutes } from './modules/products/products.routes.js'
+import { productImagesRoutes } from './modules/products/product-images.routes.js'
+import { uploadsRoutes } from './media/uploads.routes.js'
 import { notificationsRoutes } from './modules/notifications/notifications.routes.js'
 import { wasteRoutes } from './modules/waste/waste.routes.js'
 import { publicStorefrontRoutes } from './modules/storefront/public.routes.js'
@@ -137,6 +139,8 @@ export function buildApp() {
   app.register(cutTypesRoutes, { prefix: '/api/cut-types' })
   app.register(productCategoriesRoutes, { prefix: '/api/product-categories' })
   app.register(productsRoutes, { prefix: '/api/products' })
+  app.register(productImagesRoutes, { prefix: '/api/products' })
+  app.register(uploadsRoutes, { prefix: '/api/uploads' })
   app.register(warehousesRoutes, { prefix: '/api/warehouses' })
   app.register(inventoryRoutes, { prefix: '/api/inventory' })
   app.register(suppliersRoutes, { prefix: '/api/suppliers' })
