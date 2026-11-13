@@ -59,4 +59,7 @@ Es repetible: lo que ya existe (productos por nombre, fotos, logo, portada) no s
 
 ## Observación
 
+**Resuelto en la 8.13** (`docs/mision-8.13-recorte-fotos.md`).
+
+
 Las fotos de estudio son horizontales con la bolsa en el centro y mucho fondo, así que en las tarjetas cuadradas del catálogo el producto se ve algo chico. Se puede mejorar recortando cada foto más cerca de la bolsa. Conviene hacerlo con las fotos definitivas, cuando el cliente confirme cuáles usa.

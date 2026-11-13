@@ -3,7 +3,9 @@
 //
 // - Usa el material de material-cliente/ (ignorado por git): logo, fotos e identificacion-fotos.
 // - Los PRECIOS SON DE EJEMPLO y la descripcion de cada producto lo dice.
-// - Corrige el tono azulado de las fotos de fondo blanco antes de subirlas.
+// - Corrige el tono azulado de las fotos de fondo blanco y las recorta en cuadrado alrededor de
+//   la verdura (las tarjetas del catalogo son cuadradas).
+// - --rehacer-fotos vuelve a subir las fotos de productos que ya tenian una.
 // - Requiere la API local corriendo (npm run dev). Repetible: no duplica productos ni fotos.
 import { createRequire } from 'node:module'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -21,6 +23,7 @@ const ACCOUNT = {
   organizationSlug: 'soluciones-gastronomicas',
 }
 const SAMPLE_PRICE_NOTE = 'Precio de ejemplo, a confirmar.'
+const REDO_PHOTOS = process.argv.includes('--rehacer-fotos')
 
 // [nombre, categoria, foto, precio de ejemplo (Gs.)]. Solo lo identificado con seguridad o
 // confirmado por el cliente; las fotos dudosas (coliflor, lechuga/repollo, cebolla en juliana)
@@ -41,7 +44,7 @@ const CATALOG = [
   ['Morrón verde picado', 'Picados y rallados', 7176, 13000],
   ['Ajo pelado y picado', 'Picados y rallados', 7216, 12000],
   ['Zanahoria rallada', 'Picados y rallados', 7289, 9000],
-  ['Mix de morrones picados', 'Mixes', 7196, 16000],
+  ['Mix de morrones picados', 'Mixes', 7204, 16000],
   ['Mix de morrones en tiras', 'Mixes', 7343, 16000],
   ['Mix de calabaza, zanahoria y morrón', 'Mixes', 7324, 12000],
 ]
@@ -67,6 +70,47 @@ function findPhotos(dir, found = new Map()) {
 }
 const photos = findPhotos(join(MATERIAL, 'productos'))
 
+/**
+ * Recorte cuadrado centrado en la verdura: busca los pixeles con color (la bolsa y el fondo son
+ * blancos o grises), toma su caja y le suma aire. Minimo 60% del lado corto, para que las
+ * verduras palidas (cebolla, ajo) no queden demasiado justas.
+ */
+async function squareAroundProduct(input) {
+  const sampleWidth = 300
+  const { data, info } = await sharp(input).resize({ width: sampleWidth }).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+  const xs = []
+  const ys = []
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const i = (y * info.width + x) * 3
+      const max = Math.max(data[i], data[i + 1], data[i + 2])
+      const min = Math.min(data[i], data[i + 1], data[i + 2])
+      if (max > 50 && (max - min) / max > 0.3) {
+        xs.push(x)
+        ys.push(y)
+      }
+    }
+  }
+  const meta = await sharp(input).metadata()
+  const shortSide = Math.min(meta.width, meta.height)
+  let cx = meta.width / 2
+  let cy = meta.height / 2
+  let side = shortSide
+  if (xs.length >= 200) {
+    xs.sort((a, b) => a - b)
+    ys.sort((a, b) => a - b)
+    const q = (values, p) => values[Math.floor((values.length - 1) * p)]
+    const scale = meta.width / sampleWidth
+    const [x0, x1, y0, y1] = [q(xs, 0.02), q(xs, 0.98), q(ys, 0.02), q(ys, 0.98)].map((v) => v * scale)
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    side = Math.min(Math.max(Math.max(x1 - x0, y1 - y0) * 1.5, shortSide * 0.6), shortSide)
+  }
+  const left = Math.round(Math.min(Math.max(cx - side / 2, 0), meta.width - side))
+  const top = Math.round(Math.min(Math.max(cy - side / 2, 0), meta.height - side))
+  return sharp(input).extract({ left, top, width: Math.round(side), height: Math.round(side) }).toBuffer()
+}
+
 /** Foto lista para subir: con fondo blanco corregido a neutro (las de estudio salian azuladas). */
 async function preparePhoto(number, crop) {
   const file = photos.get(number)
@@ -85,7 +129,10 @@ async function preparePhoto(number, crop) {
     const means = sums.map((sum) => sum / (data.length / 3))
     pipeline = pipeline.linear(means.map((mean) => 240 / mean), [0, 0, 0]).modulate({ saturation: 1.08 })
   }
-  if (crop) {
+  if (!crop) {
+    // Producto: cuadrado alrededor de la verdura.
+    pipeline = sharp(await squareAroundProduct(await pipeline.toBuffer()))
+  } else {
     const corrected = await pipeline.toBuffer()
     pipeline = sharp(corrected).extract({
       left: Math.round(width * crop.left),
@@ -163,7 +210,7 @@ for (const [name, category, photo, price] of CATALOG) {
     ).data.product
     await call('POST', '/api/inventory/adjustments', { warehouseId, productId: product.id, newQuantity: 30, reason: 'Stock de vista previa' }, token)
   }
-  if (!product.imageUrl) {
+  if (!product.imageUrl || REDO_PHOTOS) {
     await call('POST', `/api/products/${product.id}/image`, await preparePhoto(photo), token, 'image/jpeg')
     ok(`${name} (IMG_${photo})`)
   } else ok(`${name}: ya tenía foto`)
