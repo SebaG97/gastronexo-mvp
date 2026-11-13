@@ -40,7 +40,7 @@ Es repetible: lo que ya existe (productos por nombre, fotos, logo, portada) no s
    - tiras pálidas (¿cebolla blanca en juliana o repollo?);
    - hojas verdes (¿lechuga o repollo?).
 5. Contacto, dirección de retiro, horarios, zonas de envío con su costo y pedido mínimo.
-6. Color de la cabecera: ver `docs/visual-qa/8.8/comparacion-colores.png`. La vista previa usa el verde de siempre.
+6. Color de la cabecera: **Carbón** (#1f2421), elegido por ser el más sobrio y profesional. Se cambia en Tienda online → Marca.
 
 ## Verificación
 

@@ -229,6 +229,8 @@ if (!current.settings.coverUrl) {
   await call('POST', '/api/storefront/cover', await preparePhoto(COVER_PHOTO, COVER_CROP), token, 'image/jpeg')
   ok(`Portada: IMG_${COVER_PHOTO}, recortada`)
 }
+// Color de la cabecera elegido: Carbon (neutro; el color lo ponen las verduras y el logo blanco).
+await call('PUT', '/api/storefront/brand-color', { brandColor: '#1f2421' }, token)
 if (!current.zones.some((zone) => zone.name === 'Zona de ejemplo')) {
   await call('POST', '/api/storefront/zones', { name: 'Zona de ejemplo', fee: 15000, sortOrder: 0 }, token)
 }
