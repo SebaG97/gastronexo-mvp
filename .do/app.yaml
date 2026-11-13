@@ -1,0 +1,120 @@
+# DigitalOcean App Platform - Gastronexo (mision 7.5)
+# Guia completa: docs/despliegue-digitalocean.md
+#
+# Un solo dominio: la consola y la tienda (static site) en "/" y la API en "/api".
+# Al ser el mismo origen no hace falta CORS ni VITE_API_URL.
+#
+# Antes de crear la app:
+#   1. Crear el cluster PostgreSQL administrado "gastronexo-db" (version 16, misma region).
+#   2. Reemplazar los valores marcados con CAMBIAR.
+#   3. Los secretos (JWT_SECRET, TELEGRAM_BOT_TOKEN, RESEND_API_KEY) se cargan como SECRET:
+#      aca van vacios; App Platform los encripta al guardarlos desde el panel o con doctl.
+
+name: gastronexo
+region: nyc
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: gastronexo-db # CAMBIAR si el cluster tiene otro nombre
+    db_name: gastronexo
+    db_user: gastronexo
+
+# Variables compartidas por la API y el job de migraciones.
+envs:
+  - key: NODE_ENV
+    value: production
+    scope: RUN_AND_BUILD_TIME
+  - key: DATABASE_URL
+    value: ${db.DATABASE_URL}
+    scope: RUN_TIME
+  - key: DATABASE_CA_CERT
+    value: ${db.CA_CERT}
+    scope: RUN_TIME
+  - key: JWT_SECRET
+    type: SECRET
+    scope: RUN_TIME
+    # Generar con: openssl rand -base64 48
+
+services:
+  - name: api
+    github:
+      repo: SebaG97/gastronexo-mvp
+      branch: main # CAMBIAR si se despliega desde otra rama
+      deploy_on_push: true
+    source_dir: backend
+    environment_slug: node-js
+    build_command: npm run build
+    run_command: npm start
+    http_port: 8080
+    instance_size_slug: apps-s-1vcpu-1gb
+    # Una sola instancia: los limites de intentos guardan sus contadores en memoria
+    # (con mas instancias hay que moverlos a Redis/Valkey). Los avisos ya soportan varias.
+    instance_count: 1
+    health_check:
+      http_path: /health
+    envs:
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: FRONTEND_ORIGIN
+        value: ${APP_URL}
+      - key: PUBLIC_APP_URL
+        value: ${APP_URL}
+      # IP real del cliente para los limites de intentos (X-Forwarded-For trae la del ingress).
+      - key: CLIENT_IP_HEADER
+        value: do-connecting-ip
+      # Conexiones por instancia: DB_POOL_MAX + 1 (la de /ready). Ajustar al plan del cluster.
+      - key: DB_POOL_MAX
+        value: "8"
+      # Avisos de pedidos (opcionales). Sin valor, el canal queda "no configurado".
+      - key: TELEGRAM_BOT_TOKEN
+        type: SECRET
+      - key: RESEND_API_KEY
+        type: SECRET
+      - key: EMAIL_FROM
+        value: "" # CAMBIAR, por ejemplo: Gastronexo <pedidos@tudominio.com>
+
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: SebaG97/gastronexo-mvp
+      branch: main # CAMBIAR igual que en la API
+      deploy_on_push: true
+    source_dir: backend
+    environment_slug: node-js
+    build_command: npm run build
+    run_command: npm run db:migrate:prod
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NOTIFICATIONS_WORKER_ENABLED
+        value: "false"
+
+static_sites:
+  - name: web
+    github:
+      repo: SebaG97/gastronexo-mvp
+      branch: main # CAMBIAR igual que en la API
+      deploy_on_push: true
+    source_dir: frontend
+    environment_slug: node-js
+    build_command: npm run build
+    output_dir: dist
+    # SPA: /tienda/<slug> y cualquier ruta del cliente devuelven index.html.
+    catchall_document: index.html
+
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /
+      component:
+        name: web

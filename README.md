@@ -69,6 +69,10 @@ La documentación de diseño y alcance está disponible en `docs/`.
 	npm run dev
 	```
 
+### Despliegue en producción (Misión 7.5)
+
+La app se despliega en DigitalOcean App Platform con [`.do/app.yaml`](.do/app.yaml): consola y tienda en `/`, API en `/api`, migraciones como job previo al despliegue y PostgreSQL administrado. Guía paso a paso: [`docs/despliegue-digitalocean.md`](docs/despliegue-digitalocean.md).
+
 ### Tienda pública (Misión 7.2)
 
 La tienda de cada organización vive en `http://localhost:5173/tienda/<slug>` y se publica desde **Tienda online** en la consola. Los pedidos entran a **Pedidos** como `new` con canal Tienda. Detalle en [`docs/mision-7.2-tienda-publica.md`](docs/mision-7.2-tienda-publica.md).
@@ -92,6 +96,7 @@ Backend (`backend/.env`):
 - `FRONTEND_ORIGIN`
 - `STOREFRONT_ORIGIN` (opcional: solo si la tienda se sirve desde otro dominio)
 - Opcionales, avisos de pedidos (Misión 7.4): `TELEGRAM_BOT_TOKEN`, `RESEND_API_KEY` + `EMAIL_FROM`, `PUBLIC_APP_URL`. Cómo crear el bot y configurar el email: [`docs/mision-7.4-avisos-telegram-email.md`](docs/mision-7.4-avisos-telegram-email.md).
+- Opcionales, producción (Misión 7.5): `DATABASE_CA_CERT` (CA de la base administrada, verifica TLS) y `CLIENT_IP_HEADER` (header con la IP real del cliente detrás del proxy; en App Platform `do-connecting-ip`).
 - Opcionales, seguridad (Misión 7.1): `AUTH_LOGIN_MAX_ATTEMPTS`, `AUTH_LOGIN_WINDOW_MINUTES`, `AUTH_REGISTER_MAX_PER_HOUR` y `TRUST_PROXY` (obligatorio detrás de un proxy para que los límites vean la IP real). En `NODE_ENV=production` la API no arranca con un `JWT_SECRET` de ejemplo.
 - Opcionales, pool y protecciones de PostgreSQL (defaults en `backend/.env.example`): `DB_POOL_MAX`, `DB_POOL_CONNECTION_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS`, `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, `DB_READY_TIMEOUT_MS`
 
