@@ -1,25 +1,28 @@
 # Roadmap MVP
 
-## Verde: núcleo del MVP
+## Verde: nucleo del MVP
 
 - Productos
 - Compras
-- Producción
+- Configuracion comercial de productos
+- Tipos de corte/preparacion
+- Clientes basico
+- Pedidos administrativos
+- Produccion
 - Mermas
 - Ventas
 - Stock
 - Dashboard con KPI
 
-## Amarillo: expansión operativa
+## Amarillo: expansion operativa
 
 - Proveedores
-- Clientes básico
-- Pedidos básico
 - Exportaciones
+- Ecommerce publico consume motor de pedidos
 
 ## Rojo: capacidades avanzadas
 
 - RBAC avanzado
-- Auditoría
+- Auditoria
 - Alertas inteligentes
 - Forecasting avanzado

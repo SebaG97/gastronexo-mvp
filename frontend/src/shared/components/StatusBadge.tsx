@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 type StatusBadgeProps = {
   children: ReactNode
-  tone?: 'success' | 'warning' | 'danger'
+  tone?: 'success' | 'warning' | 'danger' | 'info'
 }
 
 export function StatusBadge({ children, tone = 'success' }: StatusBadgeProps) {

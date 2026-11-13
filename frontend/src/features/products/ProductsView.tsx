@@ -1,6 +1,424 @@
-import { Package } from 'lucide-react'
-import { PlaceholderModule } from '../shared/PlaceholderModule'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
+import {
+  ApiError,
+  createProduct,
+  getProductCategories,
+  getProducts,
+  updateProduct,
+  updateProductStatus,
+  type ProductCategory,
+  type ProductMutationInput,
+  type Product,
+  type ProductsStatusFilter,
+} from '../../shared/lib/auth-api'
+import { ProductCategoriesManager } from './ProductCategoriesManager'
+import { ProductCutOptionsManager } from './ProductCutOptionsManager'
+import { ProductForm, type ProductFormValues } from './ProductForm'
+import { productTypeLabelByKey } from './product-types'
+import { productUnitLabelByKey } from './product-units'
 
-export function ProductsView() {
-  return <PlaceholderModule icon={Package} title="Productos" description="Administrá el catálogo, costos y fichas técnicas." itemLabel="productos" />
+const PAGE_SIZE = 10
+
+const guaraniFormatter = new Intl.NumberFormat('es-PY', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+type ProductsViewProps = {
+  token: string
+  canWriteProducts: boolean
+  createRequestId: number
+}
+
+type FormMode =
+  | { type: 'closed' }
+  | { type: 'create' }
+  | { type: 'edit'; product: Product }
+
+function formatCost(value: number) {
+  return `Gs. ${guaraniFormatter.format(Math.round(value))}`
+}
+
+function formatSalePrice(value: Product['salePrice']) {
+  if (value === null || value === undefined) {
+    return 'Sin precio'
+  }
+
+  return `Gs. ${guaraniFormatter.format(Math.round(Number(value)))}`
+}
+
+function toFormValues(product: Product): ProductFormValues {
+  return {
+    name: product.name,
+    sku: product.sku ?? '',
+    unit: product.unit,
+    productType: product.productType,
+    cost: String(product.cost),
+    categoryId: product.categoryId ?? '',
+    isSellable: product.isSellable,
+    isCatalogVisible: product.isCatalogVisible,
+    salePrice: product.salePrice === null ? '' : String(product.salePrice),
+    description: product.description ?? '',
+    imageUrl: product.imageUrl ?? '',
+  }
+}
+
+export function ProductsView({ token, canWriteProducts, createRequestId }: ProductsViewProps) {
+  const [products, setProducts] = useState<Product[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [status, setStatus] = useState<ProductsStatusFilter>('active')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  const [formMode, setFormMode] = useState<FormMode>({ type: 'closed' })
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pendingProductId, setPendingProductId] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [activeCategories, setActiveCategories] = useState<ProductCategory[]>([])
+
+  const canShowEmptyState = useMemo(
+    () => !isLoading && products.length === 0 && !loadError,
+    [isLoading, loadError, products.length],
+  )
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim())
+      setPage(1)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [searchTerm])
+
+  useEffect(() => {
+    if (createRequestId > 0 && canWriteProducts) {
+      setFormMode({ type: 'create' })
+      setSuccessMessage(null)
+      setErrorMessage(null)
+    }
+  }, [canWriteProducts, createRequestId])
+
+  async function loadProducts() {
+    setLoadError(null)
+    setIsLoading(true)
+
+    try {
+      const response = await getProducts(
+        {
+          q: debouncedSearchTerm || undefined,
+          status,
+          page,
+          pageSize: PAGE_SIZE,
+        },
+        token,
+      )
+
+      setProducts(response.products)
+      setTotal(response.pagination.total)
+      setTotalPages(response.pagination.totalPages)
+    } catch {
+      setProducts([])
+      setLoadError('No se pudo cargar el catálogo de productos.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function loadActiveCategories() {
+    try {
+      const response = await getProductCategories('active', token)
+      setActiveCategories(response.categories)
+    } catch {
+      setActiveCategories([])
+    }
+  }
+
+  useEffect(() => {
+    void loadProducts()
+  }, [debouncedSearchTerm, page, status, token])
+
+  useEffect(() => {
+    void loadActiveCategories()
+  }, [token])
+
+  async function handleCreate(values: ProductMutationInput) {
+    setErrorMessage(null)
+    setSuccessMessage(null)
+    setIsSubmitting(true)
+
+    try {
+      await createProduct(values, token)
+      setFormMode({ type: 'closed' })
+      setSuccessMessage('Producto creado correctamente.')
+      await loadProducts()
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.message)
+      } else {
+        setErrorMessage('No se pudo crear el producto.')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleEdit(values: ProductMutationInput) {
+    if (formMode.type !== 'edit') {
+      return
+    }
+
+    setErrorMessage(null)
+    setSuccessMessage(null)
+    setIsSubmitting(true)
+
+    try {
+      await updateProduct(formMode.product.id, values, token)
+      setFormMode({ type: 'closed' })
+      setSuccessMessage('Producto actualizado correctamente.')
+      await loadProducts()
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.message)
+      } else {
+        setErrorMessage('No se pudo actualizar el producto.')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleCategoriesChanged() {
+    await Promise.all([loadActiveCategories(), loadProducts()])
+  }
+
+  async function handleToggleStatus(product: Product) {
+    const nextStatus = !product.isActive
+    const actionLabel = nextStatus ? 'activar' : 'inactivar'
+
+    if (!window.confirm(`¿Confirmás ${actionLabel} este producto?`)) {
+      return
+    }
+
+    setErrorMessage(null)
+    setSuccessMessage(null)
+    setPendingProductId(product.id)
+
+    try {
+      await updateProductStatus(product.id, nextStatus, token)
+      setSuccessMessage(nextStatus ? 'Producto activado correctamente.' : 'Producto inactivado correctamente.')
+      await loadProducts()
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.message)
+      } else {
+        setErrorMessage('No se pudo actualizar el estado del producto.')
+      }
+    } finally {
+      setPendingProductId(null)
+    }
+  }
+
+  return (
+    <main className="page products-page" aria-busy={isLoading}>
+      <div className="page-header">
+        <div>
+          <h1>Productos</h1>
+          <p>Gestioná productos y costos de la organización activa.</p>
+        </div>
+      </div>
+
+      {(formMode.type === 'create' || formMode.type === 'edit') && canWriteProducts ? (
+        <Panel
+          className="products-panel"
+          title={formMode.type === 'create' ? 'Nuevo producto' : 'Editar producto'}
+        >
+          <ProductForm
+            initialValues={formMode.type === 'edit' ? toFormValues(formMode.product) : undefined}
+            categories={activeCategories}
+            submitLabel={formMode.type === 'create' ? 'Crear producto' : 'Guardar cambios'}
+            isSubmitting={isSubmitting}
+            onSubmit={(values) =>
+              formMode.type === 'create' ? handleCreate(values) : handleEdit(values)
+            }
+            onCancel={() => setFormMode({ type: 'closed' })}
+          />
+        </Panel>
+      ) : null}
+
+      {formMode.type === 'edit' ? (
+        <Panel className="products-panel" title="Preparación / cortes disponibles">
+          <ProductCutOptionsManager
+            token={token}
+            product={formMode.product}
+            canWriteProducts={canWriteProducts}
+          />
+        </Panel>
+      ) : null}
+
+      <Panel className="products-panel" title="Catálogo" action={loadError ? undefined : <span>Total: {total}</span>}>
+        <div className="products-toolbar">
+          <label className="field products-toolbar__field">
+            Buscar por nombre o SKU
+            <input
+              type="search"
+              placeholder="Ej: Harina, SKU-001"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+          </label>
+          <label className="field products-toolbar__field products-toolbar__field--compact">
+            Estado
+            <select
+              className="select-input"
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value as ProductsStatusFilter)
+                setPage(1)
+              }}
+            >
+              <option value="all">Todos</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+            </select>
+          </label>
+        </div>
+
+        {loadError ? (
+          <LoadErrorState message={loadError} onRetry={() => void loadProducts()} isRetrying={isLoading} />
+        ) : null}
+        {isLoading ? <p>Cargando productos...</p> : null}
+        {canShowEmptyState ? <p>No hay productos para los filtros seleccionados.</p> : null}
+
+        {!isLoading && products.length > 0 ? (
+          <TableScroll>
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>SKU</th>
+                  <th>Tipo</th>
+                  <th>Categoría</th>
+                  <th>Unidad</th>
+                  <th>Costo</th>
+                <th>Comercial</th>
+                <th>Precio venta</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id}>
+                    <td>{product.name}</td>
+                    <td>{product.sku ?? '—'}</td>
+                    <td>
+                      <StatusBadge tone={product.productType === 'raw_material' ? 'warning' : 'success'}>
+                        {productTypeLabelByKey[product.productType]}
+                      </StatusBadge>
+                    </td>
+                    <td>{product.categoryName ?? 'Sin categoría'}</td>
+                    <td>{productUnitLabelByKey[product.unit] ?? product.unit}</td>
+                  <td>{formatCost(product.cost)}</td>
+                  <td>
+                    <span className="products-table__badges">
+                      <StatusBadge tone={product.isSellable ? 'success' : 'warning'}>
+                        {product.isSellable ? 'Vendible' : 'No vendible'}
+                      </StatusBadge>
+                      <StatusBadge tone={product.isCatalogVisible ? 'success' : 'warning'}>
+                        {product.isCatalogVisible ? 'Visible' : 'Oculto'}
+                      </StatusBadge>
+                    </span>
+                  </td>
+                  <td>{formatSalePrice(product.salePrice)}</td>
+                  <td>
+                    <StatusBadge tone={product.isActive ? 'success' : 'warning'}>
+                        {product.isActive ? 'Activo' : 'Inactivo'}
+                      </StatusBadge>
+                    </td>
+                    <td className="products-table__actions">
+                      {canWriteProducts ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingProductId === product.id}
+                            onClick={() => setFormMode({ type: 'edit', product })}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={pendingProductId === product.id}
+                            onClick={() => void handleToggleStatus(product)}
+                          >
+                            {product.isActive ? 'Inactivar' : 'Activar'}
+                          </Button>
+                        </>
+                      ) : (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setFormMode({ type: 'edit', product })}
+                      >
+                        Ver cortes
+                      </Button>
+                    )}
+                  </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        ) : null}
+
+        {loadError ? null : (
+          <div className="products-pagination">
+            <span>
+              Página {page} de {Math.max(totalPages, 1)}
+            </span>
+            <div className="products-pagination__actions">
+              <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={totalPages === 0 || page >= totalPages}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
+          </div>
+        )}
+      </Panel>
+
+      <Panel className="products-panel" title="Categorías">
+        <ProductCategoriesManager
+          token={token}
+          canWriteProducts={canWriteProducts}
+          onChanged={handleCategoriesChanged}
+        />
+      </Panel>
+
+      {errorMessage ? (
+        <p className="members-message members-message--error" role="alert" aria-live="polite">
+          {errorMessage}
+        </p>
+      ) : null}
+      {successMessage ? (
+        <p className="members-message members-message--success" role="status" aria-live="polite">
+          {successMessage}
+        </p>
+      ) : null}
+    </main>
+  )
 }

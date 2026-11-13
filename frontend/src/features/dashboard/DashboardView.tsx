@@ -1,88 +1,212 @@
-import { Activity, AlertTriangle, Clock3, PackageX } from 'lucide-react'
-import { Panel, StatusBadge } from '../../shared/components'
+import { useCallback, useEffect, useState } from 'react'
+import { LoadErrorState, Panel, TableScroll } from '../../shared/components'
+import {
+  getCustomers,
+  getOrders,
+  getProducts,
+  getPurchases,
+  getSales,
+  type OrderStatus,
+  type Purchase,
+} from '../../shared/lib/auth-api'
 
-const kpis = [
-  { label: 'Facturación día', value: '$ 248.500', trend: '+8,4% vs. ayer' },
-  { label: 'Facturación semana', value: '$ 1.642.800', trend: '+5,1% vs. semana anterior' },
-  { label: 'Facturación mes', value: '$ 6.384.250', trend: '+12,3% vs. mes anterior' },
-  { label: 'Compras mes', value: '$ 2.105.640', trend: '32,9% de facturación' },
-  { label: 'Costo de merma', value: '$ 86.700', trend: '1,4% de facturación' },
-  { label: 'Margen estimado', value: '34,8%', trend: '+1,2 pts. este mes' },
-]
+type DashboardViewProps = {
+  token: string
+}
 
-const alerts = [
-  {
-    icon: PackageX,
-    title: 'Stock bajo',
-    detail: '6 insumos alcanzaron su punto de reposición.',
-    tone: 'warning' as const,
-    label: 'Revisar',
-  },
-  {
-    icon: Clock3,
-    title: 'Próximo a vencer',
-    detail: '3 lotes vencen dentro de los próximos 3 días.',
-    tone: 'danger' as const,
-    label: 'Prioridad',
-  },
-  {
-    icon: AlertTriangle,
-    title: 'Sin movimiento',
-    detail: '8 productos no registran actividad en 30 días.',
-    tone: 'warning' as const,
-    label: 'Atención',
-  },
-]
+type DashboardData = {
+  activeProducts: number
+  activeCustomers: number
+  ordersByStatus: Record<OrderStatus, number>
+  purchasesThisMonth: number
+  recentPurchases: Purchase[]
+  salesThisMonth: { count: number; total: string }
+}
 
-export function DashboardView() {
+const orderStatuses: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']
+const openOrderStatuses: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready']
+
+const statusLabelByKey: Record<OrderStatus, string> = {
+  new: 'Nuevo',
+  confirmed: 'Confirmado',
+  preparing: 'En preparación',
+  ready: 'Listo',
+  delivered: 'Entregado',
+  cancelled: 'Cancelado',
+}
+
+const moneyFormatter = new Intl.NumberFormat('es-PY', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+function formatMoney(value: string | number) {
+  const numericValue = Number(value)
+  return `Gs. ${moneyFormatter.format(Number.isFinite(numericValue) ? Math.round(numericValue) : 0)}`
+}
+
+function firstDayOfCurrentMonth() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-01`
+}
+
+/** Inicio del mes en hora local, como instante: las ventas se filtran por fecha de entrega. */
+function startOfCurrentMonthInstant() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+}
+
+async function loadDashboardData(token: string): Promise<DashboardData> {
+  const [products, customers, purchasesThisMonth, recentPurchases, salesThisMonth, ...orderTotals] = await Promise.all([
+    getProducts({ status: 'active', page: 1, pageSize: 1 }, token),
+    getCustomers({ status: 'active', page: 1, pageSize: 1 }, token),
+    getPurchases({ from: firstDayOfCurrentMonth(), page: 1, pageSize: 1 }, token),
+    getPurchases({ page: 1, pageSize: 5 }, token),
+    getSales({ from: startOfCurrentMonthInstant(), page: 1, pageSize: 1 }, token),
+    ...orderStatuses.map((status) => getOrders({ status, page: 1, pageSize: 1 }, token)),
+  ])
+
+  const ordersByStatus = Object.fromEntries(
+    orderStatuses.map((status, index) => [status, orderTotals[index].pagination.total]),
+  ) as Record<OrderStatus, number>
+
+  return {
+    activeProducts: products.pagination.total,
+    activeCustomers: customers.pagination.total,
+    ordersByStatus,
+    purchasesThisMonth: purchasesThisMonth.pagination.total,
+    recentPurchases: recentPurchases.purchases,
+    salesThisMonth: salesThisMonth.summary,
+  }
+}
+
+export function DashboardView({ token }: DashboardViewProps) {
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true)
+    setErrorMessage(null)
+
+    try {
+      setData(await loadDashboardData(token))
+    } catch {
+      setData(null)
+      setErrorMessage('No se pudo cargar el resumen operativo.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const openOrders = data
+    ? openOrderStatuses.reduce((total, status) => total + data.ordersByStatus[status], 0)
+    : 0
+
+  const kpis = data
+    ? [
+        { label: 'Productos activos', value: data.activeProducts },
+        { label: 'Clientes activos', value: data.activeCustomers },
+        { label: 'Pedidos abiertos', value: openOrders, hint: 'Nuevos, confirmados, en preparación o listos' },
+        { label: 'Compras del mes', value: data.purchasesThisMonth },
+      ]
+    : []
+
   return (
-    <main className="page">
+    <main className="page" aria-busy={isLoading}>
       <div className="page-header">
         <div>
           <h1>Resumen operativo</h1>
-          <p>Indicadores principales del negocio para hoy.</p>
+          <p>Datos actuales de la organización activa.</p>
         </div>
       </div>
 
-      <section className="dashboard-grid" aria-label="Indicadores principales">
-        {kpis.map((kpi) => (
-          <article className="panel kpi-card" key={kpi.label}>
-            <p className="kpi-card__label">{kpi.label}</p>
-            <strong className="kpi-card__value">{kpi.value}</strong>
-            <span className="kpi-card__trend">{kpi.trend}</span>
-          </article>
-        ))}
-      </section>
+      {isLoading && !data ? <p>Cargando resumen...</p> : null}
 
-      <section className="dashboard-content">
-        <Panel title="Facturación y compras">
-          <div className="chart-placeholder">
-            <Activity size={20} aria-hidden="true" />
-            <span>Gráfico de evolución mensual</span>
-          </div>
-        </Panel>
-        <Panel title="Composición de costos">
-          <div className="chart-placeholder">
-            <Activity size={20} aria-hidden="true" />
-            <span>Gráfico de distribución de costos</span>
-          </div>
-        </Panel>
-        <Panel className="alerts-panel" title="Alertas operativas">
-          <div className="alert-list">
-            {alerts.map(({ icon: Icon, title, detail, tone, label }) => (
-              <article className="alert-row" key={title}>
-                <div>
-                  <strong>
-                    <Icon size={16} aria-hidden="true" /> {title}
-                  </strong>
-                  <p className="alert-row__detail">{detail}</p>
-                </div>
-                <StatusBadge tone={tone}>{label}</StatusBadge>
+      {errorMessage ? (
+        <LoadErrorState message={errorMessage} onRetry={() => void loadData()} isRetrying={isLoading} />
+      ) : null}
+
+      {data ? (
+        <>
+          <section className="dashboard-grid dashboard-grid--compact" aria-label="Indicadores principales">
+            {kpis.map((kpi) => (
+              <article className="panel kpi-card" key={kpi.label}>
+                <p className="kpi-card__label">{kpi.label}</p>
+                <strong className="kpi-card__value">{kpi.value}</strong>
+                {kpi.hint ? <span className="kpi-card__hint">{kpi.hint}</span> : null}
               </article>
             ))}
-          </div>
-        </Panel>
-      </section>
+          </section>
+
+          <section className="dashboard-content">
+            <Panel title="Pedidos por estado">
+              <ul className="dashboard-status-list">
+                {orderStatuses.map((status) => (
+                  <li key={status}>
+                    <span>{statusLabelByKey[status]}</span>
+                    <strong>{data.ordersByStatus[status]}</strong>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+            <Panel title="Compras recientes">
+              {data.recentPurchases.length === 0 ? (
+                <p>Sin compras registradas todavía.</p>
+              ) : (
+                <TableScroll>
+                  <table className="products-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Proveedor</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.recentPurchases.map((purchase) => (
+                        <tr key={purchase.id}>
+                          <td>{new Date(purchase.purchaseDate).toLocaleDateString('es-PY')}</td>
+                          <td>{purchase.supplierName}</td>
+                          <td>{formatMoney(purchase.totalAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              )}
+            </Panel>
+            <Panel className="alerts-panel" title="Facturación, mermas y alertas">
+              <ul className="dashboard-status-list">
+                <li>
+                  <span>
+                    Facturación del mes
+                    <span className="kpi-card__hint">
+                      {data.salesThisMonth.count === 1
+                        ? '1 pedido entregado'
+                        : `${data.salesThisMonth.count} pedidos entregados`}
+                    </span>
+                  </span>
+                  <strong>{formatMoney(data.salesThisMonth.total)}</strong>
+                </li>
+                <li>
+                  <span>Mermas</span>
+                  <span className="dashboard-empty">Sin datos todavía</span>
+                </li>
+                <li>
+                  <span>Alertas de stock</span>
+                  <span className="dashboard-empty">Sin datos todavía</span>
+                </li>
+              </ul>
+            </Panel>
+          </section>
+        </>
+      ) : null}
     </main>
   )
 }

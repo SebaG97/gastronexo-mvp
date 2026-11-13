@@ -1,12 +1,27 @@
-import { StrictMode } from 'react'
+import { StrictMode, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from './app/App'
-import './shared/styles/tokens.css'
-import './shared/styles/index.css'
-import './shared/styles/app.css'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// La tienda publica (/tienda/:slug) y la consola administrativa se cargan por separado:
+// cada una trae solo su JS y sus estilos.
+async function boot() {
+  let Root: ComponentType
+
+  if (window.location.pathname.startsWith('/tienda/')) {
+    Root = (await import('./storefront/StorefrontApp')).StorefrontApp
+  } else {
+    await Promise.all([
+      import('./shared/styles/tokens.css'),
+      import('./shared/styles/index.css'),
+      import('./shared/styles/app.css'),
+    ])
+    Root = (await import('./app/App')).App
+  }
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <Root />
+    </StrictMode>,
+  )
+}
+
+void boot()

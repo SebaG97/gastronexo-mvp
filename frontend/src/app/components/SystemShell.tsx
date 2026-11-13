@@ -1,28 +1,40 @@
 import type { ReactNode } from 'react'
 import {
+  Bell,
+  BellOff,
   ChefHat,
+  CookingPot,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Moon,
   Package,
   ReceiptText,
   ShoppingCart,
+  Store,
   Sun,
   Truck,
   UtensilsCrossed,
+  Users,
   Warehouse,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '../../shared/components'
+import type { SessionOrganization } from '../../shared/lib/auth-api'
 
 export type AppSection =
   | 'dashboard'
   | 'products'
+  | 'cutTypes'
+  | 'customers'
+  | 'orders'
   | 'purchases'
   | 'production'
   | 'waste'
   | 'sales'
   | 'stock'
+  | 'members'
+  | 'storefront'
 
 type NavigationItem = {
   id: AppSection
@@ -33,36 +45,76 @@ type NavigationItem = {
 const navigation: NavigationItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'products', label: 'Productos', icon: Package },
+  { id: 'cutTypes', label: 'Tipos de corte', icon: CookingPot },
+  { id: 'customers', label: 'Clientes', icon: Users },
+  { id: 'orders', label: 'Pedidos', icon: ClipboardList },
   { id: 'purchases', label: 'Compras', icon: Truck },
   { id: 'production', label: 'Producción', icon: UtensilsCrossed },
   { id: 'waste', label: 'Mermas', icon: ReceiptText },
   { id: 'sales', label: 'Ventas', icon: ShoppingCart },
   { id: 'stock', label: 'Stock', icon: Warehouse },
+  { id: 'storefront', label: 'Tienda online', icon: Store },
+  { id: 'members', label: 'Miembros', icon: Users },
 ]
 
 type SystemShellProps = {
   activeSection: AppSection
   title: string
   primaryAction: string
+  isPrimaryActionDisabled?: boolean
+  primaryActionDisabledReason?: string
   children: ReactNode
   onNavigate: (section: AppSection) => void
   onLogout: () => void
   onPrimaryAction: () => void
   theme: 'light' | 'dark'
   onThemeToggle: () => void
+  activeOrganizationId: string
+  activeOrganizationName: string
+  organizations: SessionOrganization[]
+  canManageMembers: boolean
+  isSwitchingOrganization: boolean
+  organizationSwitchError: string | null
+  onSwitchOrganization: (organizationId: string) => void
+  newStorefrontOrders?: number
+  orderAlertsEnabled?: boolean
+  orderAlertsBlocked?: boolean
+  onToggleOrderAlerts?: () => void
 }
 
 export function SystemShell({
   activeSection,
   title,
   primaryAction,
+  isPrimaryActionDisabled = false,
+  primaryActionDisabledReason,
   children,
   onNavigate,
   onLogout,
   onPrimaryAction,
   theme,
   onThemeToggle,
+  activeOrganizationId,
+  activeOrganizationName,
+  organizations,
+  canManageMembers,
+  isSwitchingOrganization,
+  organizationSwitchError,
+  onSwitchOrganization,
+  newStorefrontOrders = 0,
+  orderAlertsEnabled = true,
+  orderAlertsBlocked = false,
+  onToggleOrderAlerts,
 }: SystemShellProps) {
+  const orderAlertsLabel = orderAlertsEnabled
+    ? orderAlertsBlocked
+      ? 'Avisos de pedidos con sonido (notificaciones del navegador bloqueadas). Click para silenciar.'
+      : 'Avisos de pedidos nuevos activados. Click para silenciar.'
+    : 'Avisos de pedidos nuevos silenciados. Click para activar sonido y notificaciones.'
+  const visibleNavigation = canManageMembers
+    ? navigation
+    : navigation.filter((item) => item.id !== 'members')
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -71,7 +123,7 @@ export function SystemShell({
           <span>Gastronexo</span>
         </div>
         <nav className="nav" aria-label="Navegación principal">
-          {navigation.map(({ id, label, icon: Icon }) => (
+          {visibleNavigation.map(({ id, label, icon: Icon }) => (
             <button
               className={`nav__item ${activeSection === id ? 'nav__item--active' : ''}`}
               key={id}
@@ -80,6 +132,11 @@ export function SystemShell({
             >
               <Icon size={18} aria-hidden="true" />
               {label}
+              {id === 'orders' && newStorefrontOrders > 0 ? (
+                <span className="nav__count" aria-label={`${newStorefrontOrders} pedidos nuevos de la tienda`}>
+                  {newStorefrontOrders}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -87,8 +144,38 @@ export function SystemShell({
       </aside>
       <div className="main-content">
         <header className="topbar">
-          <h1 className="topbar__title">{title}</h1>
+          <div className="topbar__identity">
+            <h1 className="topbar__title">{title}</h1>
+            <div className="organization-switcher">
+              <span className="organization-switcher__label">Organización activa</span>
+              <select
+                className="select-input"
+                value={activeOrganizationId}
+                onChange={(event) => onSwitchOrganization(event.target.value)}
+                disabled={isSwitchingOrganization}
+              >
+                {organizations.map((organization) => (
+                  <option key={organization.id} value={organization.id}>
+                    {organization.name}
+                  </option>
+                ))}
+              </select>
+              <span className="organization-switcher__name">{activeOrganizationName}</span>
+            </div>
+          </div>
           <div className="topbar__actions">
+            {onToggleOrderAlerts ? (
+              <button
+                aria-label={orderAlertsLabel}
+                aria-pressed={orderAlertsEnabled}
+                className={`icon-button${orderAlertsEnabled ? '' : ' icon-button--muted'}`}
+                onClick={onToggleOrderAlerts}
+                title={orderAlertsLabel}
+                type="button"
+              >
+                {orderAlertsEnabled ? <Bell size={17} /> : <BellOff size={17} />}
+              </button>
+            ) : null}
             <button
               aria-label={theme === 'light' ? 'Activar modo oscuro' : 'Activar modo claro'}
               className="icon-button"
@@ -100,9 +187,31 @@ export function SystemShell({
             <button aria-label="Cerrar sesión" className="icon-button" onClick={onLogout} type="button">
               <LogOut size={17} />
             </button>
-            <Button onClick={onPrimaryAction}>{primaryAction}</Button>
+            {isPrimaryActionDisabled && primaryActionDisabledReason ? (
+              <span className="topbar__action-hint" id="primary-action-hint">
+                {primaryActionDisabledReason}
+              </span>
+            ) : null}
+            <Button
+              disabled={isPrimaryActionDisabled}
+              onClick={onPrimaryAction}
+              title={isPrimaryActionDisabled ? primaryActionDisabledReason : undefined}
+              aria-describedby={isPrimaryActionDisabled ? 'primary-action-hint' : undefined}
+            >
+              {primaryAction}
+            </Button>
           </div>
         </header>
+        {organizationSwitchError ? (
+          <p className="topbar__feedback topbar__feedback--error" role="alert" aria-live="polite">
+            {organizationSwitchError}
+          </p>
+        ) : null}
+        {isSwitchingOrganization ? (
+          <p className="topbar__feedback" role="status" aria-live="polite">
+            Cambiando organización...
+          </p>
+        ) : null}
         {children}
       </div>
     </div>
