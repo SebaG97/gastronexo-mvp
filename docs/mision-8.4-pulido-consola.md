@@ -17,10 +17,10 @@ Cerrar los hallazgos de UX, accesibilidad y texto que quedaban de la verificaci�
 | H15 | `depÃ³sito` en el error de Compras | Corregido. No quedan textos con mojibake en `backend/src` ni en `frontend/src`. |
 | H16 | Faltan tildes | 39 reemplazos en textos visibles de Pedidos, Clientes, Compras, Ventas y en los mensajes de la API: "En preparación", "Número", "Ítems", "Depósito", "Página", "Razón social", "Teléfono", "catálogo", "opción", "Transición… inválida", etc. Se encontraron con un escáner que solo mira textos visibles (contenido JSX y strings), no identificadores ni comentarios. |
 
-## Quedan para decidir con el cliente
+## Decisiones del cliente (cerradas en la 8.6)
 
-- **H13:** ¿se permiten productos activos con el mismo nombre? Hoy sí, y puede ser intencional (por ejemplo, la misma papa de dos proveedores).
-- **H17:** la moneda se muestra en guaraníes (`Gs.`) y los textos usan voseo. Coincide con la operación en Paraguay, pero sigue pendiente confirmarlo con el cliente.
+- **H13:** no se permiten productos con el mismo nombre. Ver `docs/mision-8.6-decisiones-cliente.md`.
+- **H17:** la moneda es el guaraní (`Gs.`).
 
 ## Verificación
 

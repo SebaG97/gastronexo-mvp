@@ -365,11 +365,11 @@ En `docs/visual-qa/` (69 PNG, ~4.6 MB, página completa). En `miembros-*`, `vaci
 | H10 | Media · **Resuelto en 8.4** | a11y | Topbar (todas) | `app/components/SystemShell.tsx` | Hay dos `h1` por pantalla (topbar y página) con el mismo texto. El `select` de organización no tiene `<label>` asociado. El nombre de la organización se repite (select y span). La navegación no usa `aria-current`. |
 | H11 | Baja · **Resuelto en 6.1** | UX | Stock › Historial de ajustes | `features/stock/StockView.tsx` | La columna "Motivo" muestra el valor crudo `purchase:<uuid>`. |
 | H12 | Baja · **Resuelto en 8.4** | UI | Productos, Categorías | `app.css:516` | `td.products-table__actions` usa `display: flex`, por eso el borde inferior de la columna Acciones queda desalineado con el resto de la fila. |
-| H13 | Baja · **Pendiente de decisión** | Dominio | Productos | `backend/src/modules/products/products.routes.ts` | Se permiten productos activos con nombre duplicado (se crearon dos "Zanahoria rallada QA 7716"). Confirmar si es intencional. |
+| H13 | Baja · **Cerrado (8.6)** | Dominio | Productos | `backend/src/db/migrations/012_product_name_unique.sql` | Decisión del cliente: **no** se permiten productos con el mismo nombre (sin distinguir mayúsculas ni espacios, incluidos los inactivos). Índice único y 409 con mensaje claro. |
 | H14 | Baja · **Resuelto en 8.4** | Texto | Varias | — | Se mezcla tuteo y voseo: "Gestiona pedidos…" (Pedidos) frente a "Gestioná productos…" (Productos, Stock, Miembros). |
 | H15 | Baja · **Resuelto en 8.4** | Mojibake | Compras (error de API) | `backend/src/modules/purchases/purchases.routes.ts:334` | "No se puede registrar una compra en un depÃ³sito inactivo." |
 | H16 | Baja · **Resuelto en 8.4** | Texto | Pedidos, Clientes | `features/orders/OrdersView.tsx`, `features/customers/CustomersView.tsx` | Faltan tildes: "En preparacion", "Iniciar preparacion", "Numero", "Buscar por numero", "Razon social", "Telefono", "Pagina", "Items". Los mensajes de la API también tienen textos sin tilde ("catalogo"). |
-| H17 | Baja · **Pendiente de confirmar** | Texto | Montos (todas) | formateadores `es-PY` | La moneda se muestra como guaraníes ("Gs.") y los textos usan voseo rioplatense. Confirmar la moneda objetivo con el cliente. |
+| H17 | Baja · **Cerrado (8.6)** | Texto | Montos (todas) | formateadores `es-PY` | Decisión del cliente: la moneda es el **guaraní** ("Gs."), sin cambios. Los textos siguen en voseo. |
 
 ### Estado y pendientes
 

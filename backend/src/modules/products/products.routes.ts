@@ -109,6 +109,13 @@ function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
 }
 
+function productUniqueMessage(error: unknown) {
+  const constraint = typeof error === 'object' && error !== null && 'constraint' in error ? String(error.constraint) : ''
+  return constraint === 'products_org_name_ci_unique'
+    ? 'Ya existe un producto con ese nombre (puede estar inactivo). Usá otro nombre o reactivá el existente.'
+    : 'Ya existe un producto con ese SKU.'
+}
+
 async function categoryExistsAndIsActive(
   client: DbClient,
   organizationId: string,
@@ -385,7 +392,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(201).send({ product })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
+          return reply.code(409).send({ message: productUniqueMessage(error) })
         }
         throw error
       }
@@ -540,7 +547,7 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
         })
       } catch (error: unknown) {
         if (isUniqueViolation(error)) {
-          return reply.code(409).send({ message: 'Ya existe un producto con ese SKU.' })
+          return reply.code(409).send({ message: productUniqueMessage(error) })
         }
         throw error
       }
