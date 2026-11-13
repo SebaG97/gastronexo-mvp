@@ -8,6 +8,7 @@ import { pool } from '../../db/pool.js'
 import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { getOrganizationAccess, getRoleCapabilities } from '../../security/authorization.js'
 import { getClientIp } from '../../security/client-ip.js'
+import { clearSessionCookie, setSessionCookie, tokenForBody } from '../../security/session-cookie.js'
 import type { MembershipRole } from './auth.types.js'
 
 const registerSchema = z.object({
@@ -147,8 +148,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(403).send({ message: 'No tenés permisos para realizar esta acción.' })
     }
 
+    const token = createToken(app, request.user.sub, membership)
+    setSessionCookie(reply, token)
     return {
-      token: createToken(app, request.user.sub, membership),
+      token: tokenForBody(request, token),
       organization: {
         id: membership.organizationId,
         name: membership.organizationName,
@@ -157,6 +160,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         capabilities: getRoleCapabilities(membership.role),
       },
     }
+  })
+
+  // Mision 8.12: cerrar sesion borra la cookie. El JWT no se revoca (dura JWT_EXPIRES_IN), pero
+  // el navegador ya no lo tiene ni lo puede leer.
+  app.post('/logout', async (_request, reply) => {
+    clearSessionCookie(reply)
+    return reply.code(204).send()
   })
 
   app.get('/me', async (request, reply) => {
@@ -252,9 +262,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         organizationName: organization.name,
       }
       const token = createToken(app, user.id, activeMembership)
+      setSessionCookie(reply, token)
 
       return reply.code(201).send({
-        token,
+        token: tokenForBody(request, token),
         user,
         organization: {
           id: organization.id,
@@ -306,8 +317,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(403).send({ message: 'El usuario no pertenece a ninguna organización.' })
       }
 
+      const token = createToken(app, user.id, activeMembership)
+      setSessionCookie(reply, token)
       return {
-        token: createToken(app, user.id, activeMembership),
+        token: tokenForBody(request, token),
         user: { id: user.id, email: user.email, fullName: user.fullName },
         organization: {
           id: activeMembership.organizationId,

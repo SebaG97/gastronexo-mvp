@@ -1,8 +1,10 @@
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
 import Fastify from 'fastify'
 import { ZodError } from 'zod'
 import { config } from './config.js'
+import { csrfGuard, SESSION_COOKIE } from './security/session-cookie.js'
 import { getDatabaseErrorCode, isDatabaseUnavailableError } from './db/errors.js'
 import { readinessPool } from './db/pool.js'
 import { TransactionAbort } from './db/transaction.js'
@@ -63,7 +65,14 @@ export function buildApp() {
     origin: config.STOREFRONT_ORIGIN ? [config.FRONTEND_ORIGIN, config.STOREFRONT_ORIGIN] : config.FRONTEND_ORIGIN,
     credentials: true,
   })
-  app.register(jwt, { secret: config.JWT_SECRET, verify: { algorithms: ['HS256'] } })
+  // Mision 8.12: sesion del navegador en cookie HttpOnly (ver security/session-cookie.ts).
+  app.register(cookie)
+  app.register(jwt, {
+    secret: config.JWT_SECRET,
+    verify: { algorithms: ['HS256'] },
+    cookie: { cookieName: SESSION_COOKIE, signed: false },
+  })
+  app.addHook('onRequest', csrfGuard)
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof TransactionAbort) {
