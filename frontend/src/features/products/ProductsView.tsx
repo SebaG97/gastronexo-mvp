@@ -59,6 +59,8 @@ function toFormValues(product: Product): ProductFormValues {
     isSellable: product.isSellable,
     isCatalogVisible: product.isCatalogVisible,
     salePrice: product.salePrice === null ? '' : String(product.salePrice),
+    description: product.description ?? '',
+    imageUrl: product.imageUrl ?? '',
   }
 }
 

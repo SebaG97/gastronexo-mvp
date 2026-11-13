@@ -86,6 +86,8 @@ export type Product = {
   isSellable: boolean
   isCatalogVisible: boolean
   salePrice: string | number | null
+  description: string | null
+  imageUrl: string | null
   categoryId: string | null
   categoryName: string | null
   isActive: boolean
@@ -182,6 +184,8 @@ export type ProductMutationInput = {
   isSellable?: boolean
   isCatalogVisible?: boolean
   salePrice?: number | null
+  description?: string | null
+  imageUrl?: string | null
 }
 
 export type WarehousesStatusFilter = 'active' | 'inactive' | 'all'
@@ -411,8 +415,12 @@ export type Order = {
   orderDate: string
   requestedDeliveryDate: string | null
   subtotal: string
+  deliveryFee: string
   total: string
   itemCount: number
+  channel: OrderChannel
+  fulfillmentType: 'pickup' | 'delivery' | null
+  paymentMethod: StorefrontPaymentMethod | null
   warehouseId: string | null
   warehouseName: string | null
   deliveredAt: string | null
@@ -490,8 +498,8 @@ export type OrderHistoryEntry = {
   id: string
   fromStatus: OrderStatus | null
   toStatus: OrderStatus
-  changedBy: string
-  changedByUserName: string
+  changedBy: string | null
+  changedByUserName: string | null
   createdAt: string
 }
 
@@ -501,15 +509,63 @@ export type OrderDetail = Omit<Order, 'itemCount'> & {
   customerPhone: string | null
   customerEmail: string | null
   notes: string | null
-  createdBy: string
-  createdByUserName: string
+  createdBy: string | null
+  createdByUserName: string | null
+  deliveryZoneName: string | null
+  deliveryAddress: string | null
+  deliveryReference: string | null
+  cashChangeFor: string | null
+  contactName: string | null
+  contactPhone: string | null
+  contactEmail: string | null
   items: OrderItem[]
   history: OrderHistoryEntry[]
+}
+
+export type OrderChannel = 'admin' | 'storefront'
+export type StorefrontPaymentMethod = 'cash' | 'transfer' | 'card_on_delivery'
+
+export type StorefrontSettings = {
+  organizationId: string
+  organizationName: string
+  slug: string
+  isEnabled: boolean
+  displayName: string | null
+  tagline: string | null
+  contactPhone: string | null
+  whatsappPhone: string | null
+  contactEmail: string | null
+  pickupAddress: string | null
+  openingHours: string | null
+  cutoffNotice: string | null
+  minOrderAmount: string
+  allowsPickup: boolean
+  allowsDelivery: boolean
+  paymentMethods: StorefrontPaymentMethod[]
+  transferDetails: string | null
+}
+
+export type DeliveryZone = {
+  id: string
+  name: string
+  fee: string
+  isActive: boolean
+  sortOrder: number
+}
+
+export type StorefrontSettingsResponse = {
+  settings: StorefrontSettings
+  zones: DeliveryZone[]
+}
+
+export type StorefrontSettingsInput = Omit<StorefrontSettings, 'organizationId' | 'organizationName' | 'slug' | 'minOrderAmount'> & {
+  minOrderAmount: number
 }
 
 export type OrdersListRequest = {
   q?: string
   status?: OrderStatus | 'all'
+  channel?: OrderChannel | 'all'
   from?: string
   to?: string
   page?: number
@@ -1526,6 +1582,9 @@ export async function getOrders(query: OrdersListRequest, token: string) {
   if (query.status) {
     searchParams.set('status', query.status)
   }
+  if (query.channel) {
+    searchParams.set('channel', query.channel)
+  }
   if (query.from) {
     searchParams.set('from', query.from)
   }
@@ -1541,6 +1600,38 @@ export async function getOrders(query: OrdersListRequest, token: string) {
 
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
   return apiRequest<OrdersListResponse>(`/api/orders${suffix}`, { method: 'GET' }, token)
+}
+
+export async function getStorefrontSettings(token: string) {
+  return apiRequest<StorefrontSettingsResponse>('/api/storefront/settings', { method: 'GET' }, token)
+}
+
+export async function updateStorefrontSettings(input: StorefrontSettingsInput, token: string) {
+  return apiRequest<StorefrontSettingsResponse>(
+    '/api/storefront/settings',
+    { method: 'PUT', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function createDeliveryZone(input: { name: string; fee: number; sortOrder?: number }, token: string) {
+  return apiRequest<StorefrontSettingsResponse>(
+    '/api/storefront/zones',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function updateDeliveryZone(
+  zoneId: string,
+  input: Partial<{ name: string; fee: number; sortOrder: number; isActive: boolean }>,
+  token: string,
+) {
+  return apiRequest<StorefrontSettingsResponse>(
+    `/api/storefront/zones/${zoneId}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+    token,
+  )
 }
 
 export async function getOrderById(orderId: string, token: string) {

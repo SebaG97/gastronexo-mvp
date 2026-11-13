@@ -10,8 +10,10 @@ import { ProductionView } from '../features/production/ProductionView'
 import { SalesView } from '../features/sales/SalesView'
 import { StockView } from '../features/stock/StockView'
 import { WasteView } from '../features/waste/WasteView'
+import { StorefrontSettingsView } from '../features/storefront/StorefrontSettingsView'
 import {
   clearStoredToken,
+  getOrders,
   getUserOrganizations,
   getCurrentSession,
   getStoredToken,
@@ -37,7 +39,11 @@ const sectionMetadata: Record<AppSection, { title: string; action: string }> = {
   sales: { title: 'Ventas', action: 'Nuevo pedido' },
   stock: { title: 'Stock', action: 'Ajustar stock' },
   members: { title: 'Miembros', action: 'Gestionar accesos' },
+  storefront: { title: 'Tienda online', action: 'Ir a pedidos' },
 }
+
+// Cada cuanto se consulta si entraron pedidos nuevos desde la tienda.
+const STOREFRONT_ORDERS_POLL_MS = 60_000
 
 const sectionsWithPrimaryAction: AppSection[] = [
   'products',
@@ -48,6 +54,7 @@ const sectionsWithPrimaryAction: AppSection[] = [
   'production',
   'sales',
   'stock',
+  'storefront',
 ]
 
 export function App() {
@@ -67,6 +74,7 @@ export function App() {
   const [purchaseCreateRequestId, setPurchaseCreateRequestId] = useState(0)
   const [productionCreateRequestId, setProductionCreateRequestId] = useState(0)
   const [stockAdjustRequestId, setStockAdjustRequestId] = useState(0)
+  const [newStorefrontOrders, setNewStorefrontOrders] = useState(0)
 
   const canManageMembers =
     session?.organization.role === 'owner' || session?.organization.role === 'admin'
@@ -146,6 +154,14 @@ export function App() {
         <></>
       ),
       members: session ? <MembersView token={session.token} /> : <></>,
+      storefront: session ? (
+        <StorefrontSettingsView
+          token={session.token}
+          canManage={session.organization.role === 'owner' || session.organization.role === 'admin'}
+        />
+      ) : (
+        <></>
+      ),
     }
 
     return views[activeSection]
@@ -160,6 +176,31 @@ export function App() {
     session,
     stockAdjustRequestId,
   ])
+
+  const sessionToken = session?.token
+  useEffect(() => {
+    if (!sessionToken) {
+      setNewStorefrontOrders(0)
+      return
+    }
+    let cancelled = false
+    const check = async () => {
+      try {
+        const response = await getOrders({ channel: 'storefront', status: 'new', page: 1, pageSize: 1 }, sessionToken)
+        if (!cancelled) {
+          setNewStorefrontOrders(response.pagination.total)
+        }
+      } catch {
+        // Sin conexion o sesion vencida: el contador queda como estaba.
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => void check(), STOREFRONT_ORDERS_POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [sessionToken, activeSection])
 
   useEffect(() => {
     if (!canManageMembers && activeSection === 'members') {
@@ -345,6 +386,11 @@ export function App() {
       return
     }
 
+    if (activeSection === 'storefront') {
+      setActiveSection('orders')
+      return
+    }
+
     if (activeSection === 'stock') {
       if (session.organization.capabilities.canWriteProducts) {
         setStockAdjustRequestId((current) => current + 1)
@@ -362,6 +408,7 @@ export function App() {
       isPrimaryActionDisabled={isPrimaryActionDisabled}
       primaryActionDisabledReason={primaryActionDisabledReason}
       isSwitchingOrganization={isSwitchingOrganization}
+      newStorefrontOrders={newStorefrontOrders}
       onLogout={handleLogout}
       onNavigate={setActiveSection}
       onPrimaryAction={handlePrimaryAction}

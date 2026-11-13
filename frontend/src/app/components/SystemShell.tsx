@@ -9,6 +9,7 @@ import {
   Package,
   ReceiptText,
   ShoppingCart,
+  Store,
   Sun,
   Truck,
   UtensilsCrossed,
@@ -31,6 +32,7 @@ export type AppSection =
   | 'sales'
   | 'stock'
   | 'members'
+  | 'storefront'
 
 type NavigationItem = {
   id: AppSection
@@ -49,6 +51,7 @@ const navigation: NavigationItem[] = [
   { id: 'waste', label: 'Mermas', icon: ReceiptText },
   { id: 'sales', label: 'Ventas', icon: ShoppingCart },
   { id: 'stock', label: 'Stock', icon: Warehouse },
+  { id: 'storefront', label: 'Tienda online', icon: Store },
   { id: 'members', label: 'Miembros', icon: Users },
 ]
 
@@ -71,6 +74,7 @@ type SystemShellProps = {
   isSwitchingOrganization: boolean
   organizationSwitchError: string | null
   onSwitchOrganization: (organizationId: string) => void
+  newStorefrontOrders?: number
 }
 
 export function SystemShell({
@@ -92,6 +96,7 @@ export function SystemShell({
   isSwitchingOrganization,
   organizationSwitchError,
   onSwitchOrganization,
+  newStorefrontOrders = 0,
 }: SystemShellProps) {
   const visibleNavigation = canManageMembers
     ? navigation
@@ -114,6 +119,11 @@ export function SystemShell({
             >
               <Icon size={18} aria-hidden="true" />
               {label}
+              {id === 'orders' && newStorefrontOrders > 0 ? (
+                <span className="nav__count" aria-label={`${newStorefrontOrders} pedidos nuevos de la tienda`}>
+                  {newStorefrontOrders}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>

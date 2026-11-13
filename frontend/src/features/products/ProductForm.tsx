@@ -14,6 +14,8 @@ export type ProductFormValues = {
   isSellable: boolean
   isCatalogVisible: boolean
   salePrice: string
+  description: string
+  imageUrl: string
 }
 
 type ProductFormSubmitPayload = {
@@ -26,6 +28,8 @@ type ProductFormSubmitPayload = {
   isSellable: boolean
   isCatalogVisible: boolean
   salePrice: number | null
+  description: string | null
+  imageUrl: string | null
 }
 
 type ProductFormProps = {
@@ -47,6 +51,8 @@ const defaultValues: ProductFormValues = {
   isSellable: false,
   isCatalogVisible: false,
   salePrice: '',
+  description: '',
+  imageUrl: '',
 }
 
 export function ProductForm({
@@ -110,6 +116,14 @@ export function ProductForm({
       nextErrors.salePrice = 'El precio de venta debe ser mayor o igual a 0.'
     }
 
+    if (values.imageUrl.trim() && !/^https?:\/\/\S+$/i.test(values.imageUrl.trim())) {
+      nextErrors.imageUrl = 'La imagen tiene que ser un link que empiece con https://'
+    }
+
+    if (values.description.trim().length > 1000) {
+      nextErrors.description = 'La descripción no puede superar 1000 caracteres.'
+    }
+
     if (hasCategorySelection && !categories.some((category) => category.id === values.categoryId)) {
       nextErrors.categoryId = 'Seleccioná una categoría válida.'
     }
@@ -130,6 +144,8 @@ export function ProductForm({
       isSellable: values.isSellable,
       isCatalogVisible: values.isSellable ? values.isCatalogVisible : false,
       salePrice: values.isSellable ? parsedSalePrice : null,
+      description: values.description.trim() || null,
+      imageUrl: values.imageUrl.trim() || null,
     }
   }
 
@@ -286,6 +302,33 @@ export function ProductForm({
           />
           {errors.salePrice ? <span className="form-error">{errors.salePrice}</span> : null}
         </label>
+        <label className="field">
+          Descripción para la tienda (opcional)
+          <textarea
+            rows={2}
+            maxLength={1000}
+            value={values.description}
+            onChange={(event) => setField('description', event.target.value)}
+            disabled={isSubmitting}
+            placeholder="Origen, calibre, presentación..."
+          />
+          {errors.description ? <span className="form-error">{errors.description}</span> : null}
+        </label>
+
+        <label className="field">
+          Imagen para la tienda (link, opcional)
+          <input
+            type="url"
+            value={values.imageUrl}
+            onChange={(event) => setField('imageUrl', event.target.value)}
+            disabled={isSubmitting}
+            placeholder="https://..."
+          />
+          {errors.imageUrl ? <span className="form-error">{errors.imageUrl}</span> : null}
+        </label>
+        {values.imageUrl.trim() && !errors.imageUrl ? (
+          <img className="products-form__image-preview" src={values.imageUrl.trim()} alt="Vista previa de la imagen" />
+        ) : null}
         {errors.isCatalogVisible ? (
           <span className="form-error">{errors.isCatalogVisible}</span>
         ) : null}

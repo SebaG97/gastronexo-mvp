@@ -17,8 +17,10 @@ import {
   type InsufficientStockError,
   type Order,
   type OrderDetail,
+  type OrderChannel,
   type OrderMutationInput,
   type OrderStatus,
+  type StorefrontPaymentMethod,
   type Product,
   type ProductCutOption,
   type Warehouse,
@@ -55,6 +57,12 @@ const quantityFormatter = new Intl.NumberFormat('es-PY', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 3,
 })
+
+const paymentLabelByKey: Record<StorefrontPaymentMethod, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  card_on_delivery: 'Tarjeta al recibir',
+}
 
 const statusLabelByKey: Record<OrderStatus, string> = {
   new: 'Nuevo',
@@ -178,6 +186,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [status, setStatus] = useState<OrderStatus | 'all'>('all')
+  const [channel, setChannel] = useState<OrderChannel | 'all'>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [isLoadingOrders, setIsLoadingOrders] = useState(true)
@@ -244,6 +253,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
         {
           q: debouncedSearchTerm || undefined,
           status,
+          channel,
           page,
           pageSize: PAGE_SIZE,
         },
@@ -653,6 +663,14 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
               ))}
             </select>
           </label>
+          <label className="field products-toolbar__field products-toolbar__field--compact">
+            Canal
+            <select className="select-input" value={channel} onChange={(event) => { setChannel(event.target.value as OrderChannel | 'all'); setPage(1) }}>
+              <option value="all">Todos</option>
+              <option value="storefront">Tienda online</option>
+              <option value="admin">Carga interna</option>
+            </select>
+          </label>
         </div>
 
         {loadError ? <LoadErrorState message={loadError} onRetry={() => void loadOrders()} isRetrying={isLoadingOrders} /> : null}
@@ -664,6 +682,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
               <thead>
                 <tr>
                   <th>Numero</th>
+                  <th>Canal</th>
                   <th>Cliente</th>
                   <th>Fecha</th>
                   <th>Entrega</th>
@@ -678,6 +697,13 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
                 {orders.map((order) => (
                   <tr key={order.id}>
                     <td>{order.orderNumber}</td>
+                    <td>
+                      {order.channel === 'storefront' ? (
+                        <StatusBadge tone="info">Tienda ({order.fulfillmentType === 'delivery' ? 'envío' : 'retiro'})</StatusBadge>
+                      ) : (
+                        <span className="order-channel-internal">Interno</span>
+                      )}
+                    </td>
                     <td>{order.customerName}</td>
                     <td>{new Date(order.orderDate).toLocaleDateString('es-PY')}</td>
                     <td>{order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString('es-PY') : 'Sin fecha'}</td>
@@ -722,6 +748,30 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
               <span>Entregado: <strong>{new Date(selectedOrder.deliveredAt).toLocaleString('es-PY')}</strong></span>
             ) : null}
           </div>
+          {selectedOrder.channel === 'storefront' ? (
+            <div className="order-storefront-block">
+              <p className="order-storefront-block__title">Pedido de la tienda online</p>
+              <div className="order-detail-grid">
+                <span>Contacto: <strong>{selectedOrder.contactName}</strong>{selectedOrder.contactPhone ? <>, <a href={`tel:${selectedOrder.contactPhone.replace(/\s/g, '')}`}>{selectedOrder.contactPhone}</a></> : null}</span>
+                {selectedOrder.contactEmail ? <span>Correo: <strong>{selectedOrder.contactEmail}</strong></span> : null}
+                <span>
+                  Entrega:{' '}
+                  <strong>
+                    {selectedOrder.fulfillmentType === 'delivery'
+                      ? `Envío a ${selectedOrder.deliveryAddress ?? ''} (${selectedOrder.deliveryZoneName ?? 'sin zona'})`
+                      : 'Retira en el local'}
+                  </strong>
+                </span>
+                {selectedOrder.deliveryReference ? <span>Referencia: <strong>{selectedOrder.deliveryReference}</strong></span> : null}
+                <span>Productos: <strong>{formatMoney(selectedOrder.subtotal)}</strong></span>
+                <span>Envío: <strong>{formatMoney(selectedOrder.deliveryFee)}</strong></span>
+                <span>
+                  Pago: <strong>{selectedOrder.paymentMethod ? paymentLabelByKey[selectedOrder.paymentMethod] : 'Sin indicar'}</strong>
+                  {selectedOrder.cashChangeFor ? <> (paga con {formatMoney(selectedOrder.cashChangeFor)})</> : null}
+                </span>
+              </div>
+            </div>
+          ) : null}
           {selectedOrder.notes ? <p className="purchase-detail-notes">{selectedOrder.notes}</p> : null}
           <TableScroll>
             <table className="products-table">
@@ -786,7 +836,7 @@ export function OrdersView({ token, canWriteOrders, createRequestId }: OrdersVie
             <strong>Historial</strong>
             {selectedOrder.history.map((entry) => (
               <span key={entry.id}>
-                {entry.fromStatus ? `${statusLabelByKey[entry.fromStatus]} a ` : ''}{statusLabelByKey[entry.toStatus]} por {entry.changedByUserName} - {new Date(entry.createdAt).toLocaleString('es-PY')}
+                {entry.fromStatus ? `${statusLabelByKey[entry.fromStatus]} a ` : ''}{statusLabelByKey[entry.toStatus]} por {entry.changedByUserName ?? 'la tienda online'} - {new Date(entry.createdAt).toLocaleString('es-PY')}
               </span>
             ))}
           </div>

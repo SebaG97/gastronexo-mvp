@@ -1321,3 +1321,127 @@
     grid-column: auto;
   }
 }
+
+.status-badge--info {
+  color: var(--sys-primary);
+  background: var(--sys-info-bg);
+}
+
+.order-channel-internal {
+  color: var(--sys-text-muted);
+  font-size: 12px;
+}
+
+.order-storefront-block {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--sys-border);
+  border-left: 3px solid var(--sys-primary);
+  border-radius: var(--sys-radius);
+  background: var(--sys-info-bg);
+}
+
+.order-storefront-block__title {
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.order-storefront-block .order-detail-grid {
+  margin-bottom: 0;
+  color: var(--sys-text);
+}
+
+.storefront-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 16px;
+}
+
+.storefront-settings-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.storefront-settings-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.storefront-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.storefront-link code {
+  padding: 4px 8px;
+  border: 1px solid var(--sys-border);
+  border-radius: 6px;
+  background: var(--sys-bg);
+}
+
+.nav__count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--sys-primary-text);
+  background: var(--sys-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.products-form__image-preview {
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--sys-border);
+  border-radius: var(--sys-radius);
+  object-fit: cover;
+}
+
+.storefront-settings-form {
+  display: grid;
+  gap: 16px;
+}
+
+.storefront-settings-form .products-form__actions {
+  justify-content: flex-start;
+}
+
+.storefront-settings-fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sys-border);
+  border-radius: var(--sys-radius);
+  font-size: 13px;
+}
+
+.storefront-settings-checks label {
+  white-space: nowrap;
+}
+
+.storefront-link__open {
+  text-decoration: none;
+}
+
+.storefront-zone-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.storefront-zone-form .field {
+  flex: 1 1 200px;
+}
+
+.storefront-zone-form .field:nth-child(2) {
+  flex: 0 1 160px;
+}
