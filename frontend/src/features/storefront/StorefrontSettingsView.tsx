@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
+import { NotificationsPanel } from './NotificationsPanel'
 import {
   createDeliveryZone,
   getStorefrontSettings,
@@ -189,6 +190,8 @@ export function StorefrontSettingsView({ token, canManage }: StorefrontSettingsV
             ) : null}
             {!canManage ? <p className="purchase-detail-notes">Solo owner o admin pueden cambiar la configuración.</p> : null}
           </Panel>
+
+          <NotificationsPanel token={token} canManage={canManage} />
 
           <Panel title="Datos y reglas de venta">
             <form className="storefront-settings-form" onSubmit={handleSave}>

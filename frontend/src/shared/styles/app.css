@@ -1543,3 +1543,75 @@
     animation: none;
   }
 }
+
+/* Mision 7.4: avisos de pedidos por Telegram y email */
+.notify-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 12px 0;
+}
+
+.notify-channel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--sys-border);
+  border-radius: var(--sys-radius);
+  background: var(--sys-bg);
+}
+
+.notify-channel h3,
+.notify-recent-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.notify-recent-title {
+  margin: 16px 0 8px;
+}
+
+.notify-channel p {
+  margin: 0;
+}
+
+.notify-channel__muted {
+  color: var(--sys-text-muted);
+  font-size: 13px;
+}
+
+.notify-channel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notify-link {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--sys-primary);
+  border-radius: 6px;
+  background: var(--sys-info-bg);
+  overflow-wrap: anywhere;
+}
+
+.notify-link code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sys-surface);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.notify-email-form {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.notify-email-form .field {
+  width: 100%;
+}

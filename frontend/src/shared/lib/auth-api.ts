@@ -1602,6 +1602,61 @@ export async function getOrders(query: OrdersListRequest, token: string) {
   return apiRequest<OrdersListResponse>(`/api/orders${suffix}`, { method: 'GET' }, token)
 }
 
+// Mision 7.4: avisos de pedidos nuevos por Telegram y email.
+export type NotificationDelivery = {
+  channel: 'telegram' | 'email'
+  status: 'pending' | 'sent' | 'failed'
+  attempts: number
+  lastError: string | null
+  sentAt: string | null
+  createdAt: string
+  orderNumber: string
+}
+
+export type NotificationsResponse = {
+  telegram: {
+    available: boolean
+    unavailableReason: string | null
+    botUsername: string | null
+    linked: boolean
+    chatTitle: string | null
+    linkedAt: string | null
+    pendingLink: { code: string; expiresAt: string; url: string } | null
+  }
+  email: {
+    available: boolean
+    unavailableReason: string | null
+    recipients: string[]
+  }
+  recent: NotificationDelivery[]
+}
+
+export type NotificationTestResult = { channel: 'telegram' | 'email'; ok: boolean; error?: string }
+
+export async function getNotifications(token: string) {
+  return apiRequest<NotificationsResponse>('/api/notifications', { method: 'GET' }, token)
+}
+
+export async function updateNotificationEmails(emails: string[], token: string) {
+  return apiRequest<NotificationsResponse>('/api/notifications/emails', { method: 'PUT', body: JSON.stringify({ emails }) }, token)
+}
+
+export async function startTelegramLink(token: string) {
+  return apiRequest<NotificationsResponse>('/api/notifications/telegram/link', { method: 'POST', body: '{}' }, token)
+}
+
+export async function checkTelegramLink(token: string) {
+  return apiRequest<NotificationsResponse>('/api/notifications/telegram/check', { method: 'POST', body: '{}' }, token)
+}
+
+export async function unlinkTelegram(token: string) {
+  return apiRequest<NotificationsResponse>('/api/notifications/telegram', { method: 'DELETE' }, token)
+}
+
+export async function sendNotificationTest(token: string) {
+  return apiRequest<{ results: NotificationTestResult[] }>('/api/notifications/test', { method: 'POST', body: '{}' }, token)
+}
+
 export async function getStorefrontSettings(token: string) {
   return apiRequest<StorefrontSettingsResponse>('/api/storefront/settings', { method: 'GET' }, token)
 }
