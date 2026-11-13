@@ -6,6 +6,7 @@ import {
   getProducts,
   getPurchases,
   getSales,
+  getWasteRecords,
   type OrderStatus,
   type Purchase,
 } from '../../shared/lib/auth-api'
@@ -21,6 +22,7 @@ type DashboardData = {
   purchasesThisMonth: number
   recentPurchases: Purchase[]
   salesThisMonth: { count: number; total: string }
+  wasteThisMonth: { count: number; totalCost: string }
 }
 
 const orderStatuses: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']
@@ -58,12 +60,13 @@ function startOfCurrentMonthInstant() {
 }
 
 async function loadDashboardData(token: string): Promise<DashboardData> {
-  const [products, customers, purchasesThisMonth, recentPurchases, salesThisMonth, ...orderTotals] = await Promise.all([
+  const [products, customers, purchasesThisMonth, recentPurchases, salesThisMonth, wasteThisMonth, ...orderTotals] = await Promise.all([
     getProducts({ status: 'active', page: 1, pageSize: 1 }, token),
     getCustomers({ status: 'active', page: 1, pageSize: 1 }, token),
     getPurchases({ from: firstDayOfCurrentMonth(), page: 1, pageSize: 1 }, token),
     getPurchases({ page: 1, pageSize: 5 }, token),
     getSales({ from: startOfCurrentMonthInstant(), page: 1, pageSize: 1 }, token),
+    getWasteRecords({ from: firstDayOfCurrentMonth(), status: 'completed', page: 1, pageSize: 1 }, token),
     ...orderStatuses.map((status) => getOrders({ status, page: 1, pageSize: 1 }, token)),
   ])
 
@@ -78,6 +81,7 @@ async function loadDashboardData(token: string): Promise<DashboardData> {
     purchasesThisMonth: purchasesThisMonth.pagination.total,
     recentPurchases: recentPurchases.purchases,
     salesThisMonth: salesThisMonth.summary,
+    wasteThisMonth: { count: wasteThisMonth.summary.count, totalCost: wasteThisMonth.summary.totalCost },
   }
 }
 
@@ -195,8 +199,13 @@ export function DashboardView({ token }: DashboardViewProps) {
                   <strong>{formatMoney(data.salesThisMonth.total)}</strong>
                 </li>
                 <li>
-                  <span>Mermas</span>
-                  <span className="dashboard-empty">Sin datos todavía</span>
+                  <span>
+                    Mermas del mes
+                    <span className="kpi-card__hint">
+                      {data.wasteThisMonth.count === 1 ? '1 registro' : `${data.wasteThisMonth.count} registros`}
+                    </span>
+                  </span>
+                  <strong>{formatMoney(data.wasteThisMonth.totalCost)}</strong>
                 </li>
                 <li>
                   <span>Alertas de stock</span>

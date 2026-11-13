@@ -26,6 +26,7 @@ const movementTypeLabelByKey: Record<InventoryMovementType, string> = {
   adjustment: 'Ajuste',
   sale: 'Venta',
   production: 'Producción',
+  waste: 'Merma',
 }
 
 const movementToneByKey: Record<InventoryMovementType, 'success' | 'warning' | 'danger'> = {
@@ -33,6 +34,7 @@ const movementToneByKey: Record<InventoryMovementType, 'success' | 'warning' | '
   adjustment: 'warning',
   sale: 'danger',
   production: 'success',
+  waste: 'danger',
 }
 
 // Una produccion genera consumo (materia prima), salida (terminado) y, si se anula, movimientos inversos.
@@ -42,6 +44,8 @@ const productionSourceDisplay: Partial<
   production_consumption: { label: 'Producción · consumo', tone: 'warning' },
   production_output: { label: 'Producción · salida', tone: 'success' },
   production_void: { label: 'Producción anulada', tone: 'danger' },
+  waste: { label: 'Merma', tone: 'danger' },
+  waste_void: { label: 'Merma anulada', tone: 'success' },
 }
 
 function getMovementDisplay(movement: InventoryMovement) {
@@ -836,6 +840,7 @@ export function StockView({ token, canWriteInventory, createAdjustmentRequestId 
               <option value="adjustment">Ajuste</option>
               <option value="sale">Venta</option>
               <option value="production">Producción</option>
+              <option value="waste">Mermas</option>
             </select>
           </label>
           <label className="field stock-history__filter">

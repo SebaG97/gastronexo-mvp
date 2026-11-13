@@ -230,7 +230,7 @@ export type InventoryBalance = {
   updatedAt: string | null
 }
 
-export type InventoryMovementType = 'purchase' | 'adjustment' | 'sale' | 'production'
+export type InventoryMovementType = 'purchase' | 'adjustment' | 'sale' | 'production' | 'waste'
 
 export type InventoryMovement = {
   id: string
@@ -250,6 +250,8 @@ export type InventoryMovement = {
     | 'production_consumption'
     | 'production_output'
     | 'production_void'
+    | 'waste'
+    | 'waste_void'
   sourceId: string
   sourceReference: string | null
   createdBy: string
@@ -1676,6 +1678,73 @@ export async function unlinkTelegram(token: string) {
 
 export async function sendNotificationTest(token: string) {
   return apiRequest<{ results: NotificationTestResult[] }>('/api/notifications/test', { method: 'POST', body: '{}' }, token)
+}
+
+// Mision 8.3: mermas.
+export type WasteReason = 'expired' | 'damaged' | 'preparation' | 'missing' | 'other'
+
+export type WasteRecord = {
+  id: string
+  wasteNumber: string
+  productId: string
+  productName: string
+  productUnit: ProductUnit
+  warehouseId: string
+  warehouseName: string
+  quantity: string
+  reason: WasteReason
+  notes: string | null
+  occurredOn: string
+  unitCost: string
+  totalCost: string
+  status: 'completed' | 'voided'
+  createdBy: string
+  createdByUserName: string
+  createdAt: string
+  voidedAt: string | null
+  voidedByUserName: string | null
+  voidReason: string | null
+}
+
+export type WasteListRequest = {
+  from?: string
+  to?: string
+  reason?: WasteReason
+  status?: 'completed' | 'voided' | 'all'
+  page?: number
+  pageSize?: number
+}
+
+export type WasteListResponse = {
+  wasteRecords: WasteRecord[]
+  summary: { count: number; totalCost: string; byReason: Array<{ reason: WasteReason; count: number; totalCost: string }> }
+  pagination: { total: number; page: number; pageSize: number; totalPages: number }
+}
+
+export type WasteCreateInput = {
+  productId: string
+  warehouseId: string
+  quantity: number
+  reason: WasteReason
+  notes?: string | null
+  occurredOn?: string
+}
+
+export async function getWasteRecords(query: WasteListRequest, token: string) {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') searchParams.set(key, String(value))
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  return apiRequest<WasteListResponse>(`/api/waste${suffix}`, { method: 'GET' }, token)
+}
+
+export async function createWasteRecord(input: WasteCreateInput, token: string) {
+  return apiRequest<{ wasteRecord: WasteRecord }>('/api/waste', { method: 'POST', body: JSON.stringify(input) }, token)
+}
+
+export async function voidWasteRecord(id: string, reason: string, token: string) {
+  return apiRequest<{ wasteRecord: WasteRecord }>(`/api/waste/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }, token)
 }
 
 export async function getStorefrontSettings(token: string) {
