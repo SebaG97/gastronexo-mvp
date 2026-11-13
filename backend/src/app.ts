@@ -26,6 +26,7 @@ import { notificationsRoutes } from './modules/notifications/notifications.route
 import { wasteRoutes } from './modules/waste/waste.routes.js'
 import { publicStorefrontRoutes } from './modules/storefront/public.routes.js'
 import { storefrontAdminRoutes } from './modules/storefront/storefront-admin.routes.js'
+import { storefrontBrandingRoutes } from './modules/storefront/storefront-branding.routes.js'
 
 const SERVICE_UNAVAILABLE_BODY = {
   message: 'El servicio está ocupado. Intentá de nuevo en unos segundos.',
@@ -150,6 +151,7 @@ export function buildApp() {
   app.register(recipesRoutes, { prefix: '/api/recipes' })
   app.register(productionRunsRoutes, { prefix: '/api/production-runs' })
   app.register(storefrontAdminRoutes, { prefix: '/api/storefront' })
+  app.register(storefrontBrandingRoutes, { prefix: '/api/storefront' })
   app.register(publicStorefrontRoutes, { prefix: '/api/public' })
   app.register(notificationsRoutes, { prefix: '/api/notifications' })
   app.register(wasteRoutes, { prefix: '/api/waste' })

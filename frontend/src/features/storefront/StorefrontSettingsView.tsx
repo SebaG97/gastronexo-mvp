@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Button, LoadErrorState, Panel, StatusBadge, TableScroll } from '../../shared/components'
+import { BrandPanel } from './BrandPanel'
 import { NotificationsPanel } from './NotificationsPanel'
 import {
   createDeliveryZone,
@@ -188,8 +189,10 @@ export function StorefrontSettingsView({ token, canManage }: StorefrontSettingsV
             {!settings.isEnabled ? (
               <p className="purchase-detail-notes">Mientras no la publiques, el link muestra que la tienda no está disponible.</p>
             ) : null}
-            {!canManage ? <p className="purchase-detail-notes">Solo owner o admin pueden cambiar la configuración.</p> : null}
+            {!canManage ? <p className="purchase-detail-notes">Solo el dueño o un administrador pueden cambiar la configuración.</p> : null}
           </Panel>
+
+          <BrandPanel token={token} canManage={canManage} settings={settings} onChange={setSettings} />
 
           <NotificationsPanel token={token} canManage={canManage} />
 

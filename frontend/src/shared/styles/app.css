@@ -1936,3 +1936,107 @@
   border-color: var(--sys-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sys-primary) 18%, transparent);
 }
+
+/* Mision 8.8: marca de la tienda */
+.brand-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.brand-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 96px;
+  padding: 14px 18px;
+  border-radius: var(--sys-radius);
+  color: #eef3e6;
+  overflow: hidden;
+}
+
+.brand-preview__logo {
+  display: block;
+  max-width: min(220px, 55%);
+  max-height: 72px;
+  object-fit: contain;
+}
+
+.brand-preview__name {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.brand-preview__cover {
+  width: 128px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.brand-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sys-border);
+}
+
+.brand-panel__row > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.brand-panel__hint {
+  margin: 4px 0 0;
+  color: var(--sys-text-muted);
+  font-size: 0.875rem;
+}
+
+.brand-panel__actions,
+.brand-panel__colors {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px 4px 6px;
+  border: 1px solid var(--sys-border);
+  border-radius: 999px;
+  color: var(--sys-text);
+  background: var(--sys-surface);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.brand-swatch[aria-checked='true'] {
+  border-color: var(--sys-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sys-primary) 30%, transparent);
+  font-weight: 650;
+}
+
+.brand-swatch__color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.brand-swatch--custom input[type='color'] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}

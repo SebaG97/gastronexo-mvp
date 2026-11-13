@@ -7,7 +7,8 @@
 // - s3: cualquier almacenamiento compatible con S3 (DigitalOcean Spaces, MinIO para pruebas). La
 //   URL publica sale de S3_PUBLIC_BASE_URL (por ejemplo el CDN del Space).
 //
-// Las claves tienen la forma products/<organizationId>/<uuid>.webp. Se generan en el servidor y
+// Las claves tienen la forma <tipo>/<organizationId>/<uuid>.webp, con tipo products o brand (logo
+// y portada de la tienda, mision 8.8). Se generan en el servidor y
 // se validan antes de leer o borrar, asi que nunca llega una ruta armada por el cliente.
 
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
@@ -18,14 +19,19 @@ import { config } from '../config.js'
 export const LOCAL_MEDIA_PREFIX = '/api/uploads/'
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const KEY_PATTERN = new RegExp(`^products/(${UUID})/${UUID}\\.webp$`)
+export type MediaKind = 'products' | 'brand'
+const KEY_PATTERN = new RegExp(`^(?:products|brand)/(${UUID})/${UUID}\\.webp$`)
 
 export function isValidMediaKey(key: string) {
   return KEY_PATTERN.test(key)
 }
 
 export function productImageKey(organizationId: string, fileId: string) {
-  return `products/${organizationId}/${fileId}.webp`
+  return mediaKey('products', organizationId, fileId)
+}
+
+export function mediaKey(kind: MediaKind, organizationId: string, fileId: string) {
+  return `${kind}/${organizationId}/${fileId}.webp`
 }
 
 export interface MediaStorage {

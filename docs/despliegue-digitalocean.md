@@ -70,7 +70,7 @@ Después, en **Settings**, cargá los secretos del Paso 2 y guardá. Eso dispara
 
 ## Paso 4. Primer despliegue
 
-Orden de App Platform: build de los componentes → job `migrate` (crea las tablas, de la 001 a la 012) → API y web.
+Orden de App Platform: build de los componentes → job `migrate` (crea las tablas, de la 001 a la 013) → API y web.
 
 - **Logs del job:** `doctl apps logs <app-id> migrate --type run`. Tiene que mostrar `Applied migration 001_…` hasta `010_…`. En los despliegues siguientes no muestra nada si no hay migraciones nuevas.
 - **API:** `https://<tu-app>.ondigitalocean.app/api/...` y el health check interno `/health`.

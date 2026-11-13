@@ -26,6 +26,9 @@ export type StoreRow = {
   allowsDelivery: boolean
   paymentMethods: PaymentMethod[]
   transferDetails: string | null
+  logoUrl: string | null
+  coverUrl: string | null
+  brandColor: string | null
 }
 
 export type DeliveryZoneRow = {
@@ -53,7 +56,10 @@ const storeColumns = `
   COALESCE(s.allows_pickup, true) AS "allowsPickup",
   COALESCE(s.allows_delivery, true) AS "allowsDelivery",
   COALESCE(s.payment_methods, ARRAY['cash', 'transfer']::text[]) AS "paymentMethods",
-  s.transfer_details AS "transferDetails"`
+  s.transfer_details AS "transferDetails",
+  s.logo_url AS "logoUrl",
+  s.cover_url AS "coverUrl",
+  s.brand_color AS "brandColor"`
 
 export async function getStoreByOrganizationId(client: DbClient, organizationId: string) {
   const result = await client.query<StoreRow>(
@@ -107,6 +113,9 @@ export function publicStore(store: StoreRow, zones: DeliveryZoneRow[]) {
     allowsDelivery: store.allowsDelivery && zones.length > 0,
     paymentMethods: store.paymentMethods,
     transferDetails: store.transferDetails,
+    logoUrl: store.logoUrl,
+    coverUrl: store.coverUrl,
+    brandColor: store.brandColor,
     deliveryZones: zones.map((zone) => ({ id: zone.id, name: zone.name, fee: zone.fee })),
   }
 }

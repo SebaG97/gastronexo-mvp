@@ -556,6 +556,10 @@ export type StorefrontSettings = {
   allowsDelivery: boolean
   paymentMethods: StorefrontPaymentMethod[]
   transferDetails: string | null
+  // Marca (mision 8.8)
+  logoUrl: string | null
+  coverUrl: string | null
+  brandColor: string | null
 }
 
 export type DeliveryZone = {
@@ -571,7 +575,10 @@ export type StorefrontSettingsResponse = {
   zones: DeliveryZone[]
 }
 
-export type StorefrontSettingsInput = Omit<StorefrontSettings, 'organizationId' | 'organizationName' | 'slug' | 'minOrderAmount'> & {
+export type StorefrontSettingsInput = Omit<
+  StorefrontSettings,
+  'organizationId' | 'organizationName' | 'slug' | 'minOrderAmount' | 'logoUrl' | 'coverUrl' | 'brandColor'
+> & {
   minOrderAmount: number
 }
 
@@ -1768,6 +1775,29 @@ export async function updateStorefrontSettings(input: StorefrontSettingsInput, t
   return apiRequest<StorefrontSettingsResponse>(
     '/api/storefront/settings',
     { method: 'PUT', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+// Mision 8.8: logo y portada de la tienda (imagen como cuerpo crudo) y color de la cabecera.
+export type StoreImageSlot = 'logo' | 'cover'
+
+export async function uploadStoreImage(slot: StoreImageSlot, file: File, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(
+    `/api/storefront/${slot}`,
+    { method: 'POST', body: file, headers: { 'Content-Type': file.type } },
+    token,
+  )
+}
+
+export async function deleteStoreImage(slot: StoreImageSlot, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(`/api/storefront/${slot}`, { method: 'DELETE' }, token)
+}
+
+export async function updateStoreBrandColor(brandColor: string | null, token: string) {
+  return apiRequest<{ settings: StorefrontSettings }>(
+    '/api/storefront/brand-color',
+    { method: 'PUT', body: JSON.stringify({ brandColor }) },
     token,
   )
 }
