@@ -420,6 +420,7 @@ export async function getOrderById(client: DbClient, organizationId: string, ord
        osh.to_status AS "toStatus",
        osh.changed_by AS "changedBy",
        u.full_name AS "changedByUserName",
+       osh.note,
        osh.created_at AS "createdAt"
      FROM order_status_history osh
      LEFT JOIN users u ON u.id = osh.changed_by

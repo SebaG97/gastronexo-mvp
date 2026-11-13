@@ -16,6 +16,7 @@ async function boot() {
       import('./shared/styles/tokens.css'),
       import('./shared/styles/index.css'),
       import('./shared/styles/app.css'),
+      import('./shared/styles/orders-board.css'),
     ])
     Root = (await import('./app/App')).App
   }

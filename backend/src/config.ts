@@ -66,6 +66,8 @@ const environmentSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  // Zona horaria del negocio: define que es "hoy" en el tablero de pedidos (mision 9.1).
+  BUSINESS_TIMEZONE: z.string().trim().default('America/Asuncion'),
   // Origen de la tienda publica si se sirve desde otro dominio (opcional).
   STOREFRONT_ORIGIN: z.string().url().optional(),
   // Pool de conexiones de la API.

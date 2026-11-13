@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { pool } from '../../db/pool.js'
+import { config } from '../../config.js'
 import { abortTransaction, withTransaction } from '../../db/transaction.js'
 import { requireOrganizationRole } from '../../security/authorization.js'
 import {
@@ -68,9 +69,73 @@ const updateOrderSchema = z
 const updateOrderStatusSchema = z.object({
   status: z.enum(orderStatuses),
   warehouseId: z.string().uuid().optional(),
+  // Mision 9.1: motivo (por ejemplo, de la cancelacion). Queda en el historial.
+  note: z.string().trim().max(300).optional(),
 })
 
+// Mision 9.1: tablero de pedidos. Todos los activos (nuevo, confirmado, en preparacion, listo)
+// mas los entregados y cancelados de hoy, en una sola consulta, con lo que muestra la tarjeta.
+const BOARD_ACTIVE_LIMIT = 300
+
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
+  app.get(
+    '/board',
+    { preHandler: requireOrganizationRole('owner', 'admin', 'operator', 'viewer') },
+    async (request) => {
+      const organizationId = request.organizationAccess!.organization.id
+      const result = await pool.query(
+        `WITH board AS (
+           SELECT o.*
+           FROM orders o
+           WHERE o.organization_id = $1
+             AND (
+               o.status IN ('new', 'confirmed', 'preparing', 'ready')
+               OR (o.updated_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+             )
+           ORDER BY (o.status IN ('delivered', 'cancelled')), o.created_at ASC
+           LIMIT $3
+         )
+         SELECT
+           o.id,
+           o.order_number AS "orderNumber",
+           o.customer_id AS "customerId",
+           c.name AS "customerName",
+           COALESCE(o.contact_phone, c.phone) AS "customerPhone",
+           o.status,
+           o.order_date::text AS "orderDate",
+           o.requested_delivery_date::text AS "requestedDeliveryDate",
+           o.total::text AS total,
+           o.channel,
+           o.fulfillment_type AS "fulfillmentType",
+           o.payment_method AS "paymentMethod",
+           o.warehouse_id AS "warehouseId",
+           o.created_at AS "createdAt",
+           o.updated_at AS "updatedAt",
+           items."itemCount",
+           items."itemsPreview"
+         FROM board o
+         JOIN customers c
+           ON c.id = o.customer_id
+          AND c.organization_id = o.organization_id
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*)::int AS "itemCount",
+             string_agg(
+               oi.product_name_snapshot || COALESCE(' (' || oi.cut_name_snapshot || ')', ''),
+               ', ' ORDER BY oi.created_at
+             ) AS "itemsPreview"
+           FROM order_items oi
+           WHERE oi.order_id = o.id
+             AND oi.organization_id = o.organization_id
+         ) items ON true
+         ORDER BY o.created_at ASC`,
+        [organizationId, config.BUSINESS_TIMEZONE, BOARD_ACTIVE_LIMIT],
+      )
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: config.BUSINESS_TIMEZONE }).format(new Date())
+      return { orders: result.rows, today, truncated: result.rows.length >= BOARD_ACTIVE_LIMIT }
+    },
+  )
+
   app.get(
     '/',
     { preHandler: requireOrganizationRole('owner', 'admin', 'operator', 'viewer') },
@@ -489,9 +554,9 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         )
 
         await client.query(
-          `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-           VALUES ($1, $2, $3, $4)`,
-          [id, currentOrder.status, input.status, userId],
+          `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, currentOrder.status, input.status, userId, input.note || null],
         )
 
         const order = await getOrderById(client, organizationId, id)

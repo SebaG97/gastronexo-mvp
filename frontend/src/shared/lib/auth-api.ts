@@ -455,6 +455,33 @@ export type StockShortage = {
   missing: string
 }
 
+// Mision 9.1: tarjeta del tablero de pedidos (GET /api/orders/board). Fechas como YYYY-MM-DD.
+export type BoardOrder = {
+  id: string
+  orderNumber: string
+  customerId: string
+  customerName: string
+  customerPhone: string | null
+  status: OrderStatus
+  orderDate: string
+  requestedDeliveryDate: string | null
+  total: string
+  channel: OrderChannel
+  fulfillmentType: 'pickup' | 'delivery' | null
+  paymentMethod: StorefrontPaymentMethod | null
+  warehouseId: string | null
+  createdAt: string
+  updatedAt: string
+  itemCount: number
+  itemsPreview: string | null
+}
+
+export type OrdersBoardResponse = {
+  orders: BoardOrder[]
+  today: string
+  truncated: boolean
+}
+
 export type InsufficientStockError = {
   message: string
   code: 'insufficient_stock'
@@ -518,6 +545,8 @@ export type OrderHistoryEntry = {
   toStatus: OrderStatus
   changedBy: string | null
   changedByUserName: string | null
+  // Motivo del cambio (por ejemplo, de una cancelacion). Mision 9.1.
+  note?: string | null
   createdAt: string
 }
 
@@ -1854,17 +1883,22 @@ export async function updateOrder(orderId: string, input: Partial<OrderMutationI
   )
 }
 
+export async function getOrdersBoard(token: string) {
+  return apiRequest<OrdersBoardResponse>('/api/orders/board', { method: 'GET' }, token)
+}
+
 export async function updateOrderStatus(
   orderId: string,
   status: OrderStatus,
   token: string,
   warehouseId?: string,
+  note?: string,
 ) {
   return apiRequest<OrderDetailResponse>(
     `/api/orders/${orderId}/status`,
     {
       method: 'PATCH',
-      body: JSON.stringify(warehouseId ? { status, warehouseId } : { status }),
+      body: JSON.stringify({ status, ...(warehouseId ? { warehouseId } : {}), ...(note ? { note } : {}) }),
     },
     token,
   )
